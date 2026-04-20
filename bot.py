@@ -52,7 +52,6 @@ cur.execute('''
 ''')
 conn.commit()
 
-# Временное хранилище
 user_choice = {}
 
 # ========== ТЕКСТЫ ==========
@@ -62,13 +61,13 @@ TEXTS = {
         'buy_btn': "🟢 Купить",
         'sell_btn': "🔴 Продать",
         'rates_btn': "📊 Курсы",
-        'test_btn': "🔴 ТЕСТ",
+        'help_btn': "❓ Помощь",
+        'contacts_btn': "📞 Контакты",
         'back_btn': "🔙 Назад",
         'select_buy': "💰 *Введи сумму в рублях для покупки {coin}:*\n📊 *Лимиты:* 1 000 - 50 000 ₽",
         'select_sell': "💰 *Введи сумму в рублях для продажи {coin}:*\n📊 *Лимиты:* 1 000 - 50 000 ₽",
         'limit_error': "❌ *Сумма должна быть от 1 000 до 50 000 ₽*",
         'order_created': "✅ *Заявка #{id} создана!*\n\n{type} {coin} на {amount} ₽\n\n📞 *Оператор свяжется с вами*",
-        'test_success': "✅ Кнопка работает!",
         'no_orders': "📭 *Нет новых заявок*",
         'orders_title': "📋 *Новые заявки:*\n\n",
         'type_buy': "Покупка",
@@ -76,6 +75,29 @@ TEXTS = {
         'change_lang': "🌐 Сменить язык",
         'lang_selected': "✅ Язык: Русский",
         'select_lang': "🌐 *Выбери язык:*",
+        'help_text': (
+            "❓ *Как пользоваться обменником:*\n\n"
+            "1️⃣ *Купить криптовалюту*\n"
+            "   • Выбери валюту (USDT, BTC, ETH, RapiraRUB)\n"
+            "   • Введи сумму в рублях (от 1000 до 50000)\n"
+            "   • Оператор свяжется с тобой\n\n"
+            "2️⃣ *Продать криптовалюту*\n"
+            "   • Выбери валюту\n"
+            "   • Введи сумму в рублях\n"
+            "   • Оператор свяжется с тобой\n\n"
+            "3️⃣ *Курсы*\n"
+            "   • Актуальные курсы с наценкой 10% (покупка) и -2% (продажа)\n\n"
+            "4️⃣ *Контакты*\n"
+            "   • Связь с оператором: кнопка ниже\n\n"
+            "⏰ *Время работы:* 10:00 – 22:00 МСК"
+        ),
+        'contacts_text': (
+            "📞 *Связь с оператором:*\n\n"
+            "• Telegram: @shakakobmen\n"
+            "• WhatsApp: +7 999 123-45-67\n"
+            "• Email: support@crypto-exchange.ru\n\n"
+            "⏰ *Время ответа:* обычно в течение 5 минут"
+        ),
         'rates_text': (
             "📊 *Рыночные курсы:*\n"
             "└ USDT: 82,81 ₽\n"
@@ -97,13 +119,13 @@ TEXTS = {
         'buy_btn': "🟢 Buy",
         'sell_btn': "🔴 Sell",
         'rates_btn': "📊 Rates",
-        'test_btn': "🔴 TEST",
+        'help_btn': "❓ Help",
+        'contacts_btn': "📞 Contacts",
         'back_btn': "🔙 Back",
         'select_buy': "💰 *Enter amount in RUB to buy {coin}:*\n📊 *Limits:* 1,000 - 50,000 RUB",
         'select_sell': "💰 *Enter amount in RUB to sell {coin}:*\n📊 *Limits:* 1,000 - 50,000 RUB",
         'limit_error': "❌ *Amount must be between 1,000 and 50,000 RUB*",
         'order_created': "✅ *Order #{id} created!*\n\n{type} {coin} for {amount} RUB\n\n📞 *Operator will contact you*",
-        'test_success': "✅ Button works!",
         'no_orders': "📭 *No new orders*",
         'orders_title': "📋 *New orders:*\n\n",
         'type_buy': "Purchase",
@@ -111,6 +133,29 @@ TEXTS = {
         'change_lang': "🌐 Change language",
         'lang_selected': "✅ Language: English",
         'select_lang': "🌐 *Choose language:*",
+        'help_text': (
+            "❓ *How to use the exchanger:*\n\n"
+            "1️⃣ *Buy crypto*\n"
+            "   • Choose currency (USDT, BTC, ETH, RapiraRUB)\n"
+            "   • Enter amount in RUB (1000 - 50000)\n"
+            "   • Operator will contact you\n\n"
+            "2️⃣ *Sell crypto*\n"
+            "   • Choose currency\n"
+            "   • Enter amount in RUB\n"
+            "   • Operator will contact you\n\n"
+            "3️⃣ *Rates*\n"
+            "   • Current rates with 10% markup (buy) and -2% (sell)\n\n"
+            "4️⃣ *Contacts*\n"
+            "   • Contact operator: button below\n\n"
+            "⏰ *Working hours:* 10:00 – 22:00 MSK"
+        ),
+        'contacts_text': (
+            "📞 *Contact operator:*\n\n"
+            "• Telegram: @shakakobmen\n"
+            "• WhatsApp: +7 999 123-45-67\n"
+            "• Email: support@crypto-exchange.ru\n\n"
+            "⏰ *Response time:* usually within 5 minutes"
+        ),
         'rates_text': (
             "📊 *Market rates:*\n"
             "└ USDT: 82.81 RUB\n"
@@ -148,7 +193,8 @@ def main_menu(user_id):
         [InlineKeyboardButton(text=get_text(user_id, 'buy_btn'), callback_data="buy")],
         [InlineKeyboardButton(text=get_text(user_id, 'sell_btn'), callback_data="sell")],
         [InlineKeyboardButton(text=get_text(user_id, 'rates_btn'), callback_data="rates")],
-        [InlineKeyboardButton(text=get_text(user_id, 'test_btn'), callback_data="test")],
+        [InlineKeyboardButton(text=get_text(user_id, 'help_btn'), callback_data="help")],
+        [InlineKeyboardButton(text=get_text(user_id, 'contacts_btn'), callback_data="contacts")],
         [InlineKeyboardButton(text=get_text(user_id, 'change_lang'), callback_data="change_lang")]
     ])
 
@@ -174,6 +220,13 @@ def lang_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang_ru")],
         [InlineKeyboardButton(text="🇬🇧 English", callback_data="lang_en")]
+    ])
+
+def contacts_menu(user_id):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📩 Написать оператору", url="https://t.me/shakakobmen")],
+        [InlineKeyboardButton(text="📞 WhatsApp", url="https://wa.me/79991234567")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="main")]
     ])
 
 @dp.message(Command("start"))
@@ -232,9 +285,15 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Тест
-    if data == "test":
-        await call.message.answer(get_text(uid, 'test_success'), reply_markup=main_menu(uid))
+    # Помощь
+    if data == "help":
+        await call.message.answer(get_text(uid, 'help_text'), parse_mode="Markdown", reply_markup=main_menu(uid))
+        await call.answer()
+        return
+    
+    # Контакты
+    if data == "contacts":
+        await call.message.answer(get_text(uid, 'contacts_text'), parse_mode="Markdown", reply_markup=contacts_menu(uid))
         await call.answer()
         return
     
@@ -269,7 +328,6 @@ async def handle_amount(message: types.Message):
         action, coin = user_choice[uid]
         type_text = get_text(uid, 'type_buy') if action == "buy" else get_text(uid, 'type_sell')
         
-        # Сохраняем заявку
         cur.execute('''
             INSERT INTO orders (user_id, username, full_name, type, coin, amount, status, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -283,7 +341,6 @@ async def handle_amount(message: types.Message):
             reply_markup=main_menu(uid)
         )
         
-        # Уведомление админу
         username = f"@{message.from_user.username}" if message.from_user.username else "no username"
         await bot.send_message(
             ADMIN_ID,
