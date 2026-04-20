@@ -57,16 +57,23 @@ user_choice = {}
 
 # ========== ФУНКЦИИ ДЛЯ ПОЛУЧЕНИЯ КУРСОВ ==========
 async def get_usdt_rub():
-    """Получает курс USDT/RUB с Binance P2P (покупка)"""
+    """Получает курс USDT/RUB с Binance P2P (покупка) с заголовками браузера"""
     try:
         url = "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search"
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://p2p.binance.com/",
+            "Origin": "https://p2p.binance.com",
+            "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"
+        }
         payload = {
             "page": 1,
             "rows": 1,
             "payTypes": [],
             "asset": "USDT",
-            "tradeType": "BUY",  # Покупаем USDT за RUB
+            "tradeType": "BUY",
             "fiat": "RUB",
             "publisherType": None,
             "merchantCheck": False,
@@ -76,11 +83,12 @@ async def get_usdt_rub():
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, json=payload) as resp:
                 data = await resp.json()
+                
                 if data.get('code') == '000000' and data.get('data'):
                     price = float(data['data'][0]['adv']['price'])
                     return price
                 else:
-                    print(f"P2P API error: {data}")
+                    print(f"P2P API error: {data.get('code')} - {data.get('message')}")
                     return None
     except Exception as e:
         print(f"Ошибка USDT/RUB: {e}")
@@ -343,7 +351,7 @@ async def handle_callback(call: types.CallbackQuery):
         # Показываем сообщение о загрузке
         await call.message.answer(get_text(uid, 'loading_rates'), parse_mode="Markdown")
         
-        # Получаем курс USDT/RUB с P2P
+        # Получаем курс USDT/RUB с P2P (с заголовками браузера)
         usdt_rub = await get_usdt_rub()
         if usdt_rub is None:
             await call.message.answer("❌ *Не удалось загрузить курс USDT/RUB с Binance P2P. Попробуйте позже.*", parse_mode="Markdown")
