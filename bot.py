@@ -2,11 +2,30 @@ import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from flask import Flask
+from threading import Thread
 import os
 
-# Токен будет браться из переменных Render
+# ========== ТОКЕН ==========
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+# ===========================
 
+# Минимальный веб-сервер для Render
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is alive!"
+
+def run():
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# ========== ТЕЛЕГРАМ-БОТ ==========
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -27,4 +46,5 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    keep_alive()  # Запускаем веб-сервер в фоне
     asyncio.run(main())
