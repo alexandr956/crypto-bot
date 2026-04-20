@@ -55,63 +55,43 @@ conn.commit()
 
 user_choice = {}
 
-# ========== ФУНКЦИИ ДЛЯ ПОЛУЧЕНИЯ КУРСОВ ==========
-async def get_usdt_rub():
-    """Получает курс USDT/RUB с Binance P2P (покупка) с заголовками браузера"""
+# ========== ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ КУРСОВ (СТАБИЛЬНАЯ) ==========
+async def get_crypto_rates():
+    """
+    Получает курсы BTC/RUB, ETH/RUB и USDT/RUB.
+    BTC/RUB и ETH/RUB: Binance Spot (BTC/USDT, ETH/USDT) * курс USD/RUB от ЦБ РФ
+    USDT/RUB: курс USD/RUB от ЦБ РФ (USDT привязан к доллару)
+    """
     try:
-        url = "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search"
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "https://p2p.binance.com/",
-            "Origin": "https://p2p.binance.com",
-            "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"
-        }
-        payload = {
-            "page": 1,
-            "rows": 1,
-            "payTypes": [],
-            "asset": "USDT",
-            "tradeType": "BUY",
-            "fiat": "RUB",
-            "publisherType": None,
-            "merchantCheck": False,
-            "transAmount": 50000
-        }
-        
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                data = await resp.json()
-                
-                if data.get('code') == '000000' and data.get('data'):
-                    price = float(data['data'][0]['adv']['price'])
-                    return price
-                else:
-                    print(f"P2P API error: {data.get('code')} - {data.get('message')}")
-                    return None
-    except Exception as e:
-        print(f"Ошибка USDT/RUB: {e}")
-        return None
+            # 1. Получаем курс USD/RUB от ЦБ РФ (самый стабильный источник)
+            async with session.get("https://www.cbr-xml-daily.ru/daily_json.js") as resp:
+                cbr_data = await resp.json()
+                usd_to_rub = float(cbr_data['Valute']['USD']['Value'])
+                print(f"DEBUG: Курс USD/RUB от ЦБ: {usd_to_rub}")
 
-async def get_crypto_usdt():
-    """Получает курсы BTC/USDT и ETH/USDT с Binance Spot"""
-    try:
-        async with aiohttp.ClientSession() as session:
-            # BTC/USDT
+            # 2. Получаем курсы BTC/USDT и ETH/USDT с Binance Spot (публичный API)
             async with session.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT") as resp:
                 btc_data = await resp.json()
                 btc_usdt = float(btc_data['price'])
-            
-            # ETH/USDT
+
             async with session.get("https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT") as resp:
                 eth_data = await resp.json()
                 eth_usdt = float(eth_data['price'])
+                
+            print(f"DEBUG: Курсы с Binance: BTC={btc_usdt}, ETH={eth_usdt}")
+
+            # 3. Рассчитываем курсы в рублях
+            btc_rub = btc_usdt * usd_to_rub
+            eth_rub = eth_usdt * usd_to_rub
             
-            return btc_usdt, eth_usdt
+            # 4. Курс USDT/RUB: USDT привязан к доллару 1:1
+            usdt_rub = usd_to_rub
+
+            return usdt_rub, btc_rub, eth_rub
     except Exception as e:
-        print(f"Ошибка BTC/ETH: {e}")
-        return None, None
+        print(f"КРИТИЧЕСКАЯ ОШИБКА при получении курсов: {e}")
+        return None, None, None
 
 # ========== ТЕКСТЫ ==========
 TEXTS = {
@@ -162,7 +142,7 @@ TEXTS = {
         'admin_panel': "🔧 *Панель администратора*\n\nВыберите действие:",
         'admin_orders_btn': "📋 Список заявок",
         'admin_stats_btn': "📊 Статистика",
-        'loading_rates': "🔄 *Загружаю актуальные курсы с Binance...*"
+        'loading_rates': "🔄 *Загружаю актуальные курсы...*"
     },
     'en': {
         'welcome': "👋 *Hi {name}!*\n\n🏦 *Welcome to MOSS PAY Crypto Exchanger*\n\n💎 *Why choose us:*\n• 🚀 Instant orders\n• 🔒 Secure transactions\n• 💬 24/7 support\n• 💰 Best rates\n\n👇 *Select an action below*",
@@ -211,7 +191,7 @@ TEXTS = {
         'admin_panel': "🔧 *Admin panel*\n\nSelect action:",
         'admin_orders_btn': "📋 Orders list",
         'admin_stats_btn': "📊 Statistics",
-        'loading_rates': "🔄 *Loading live rates from Binance...*"
+        'loading_rates': "🔄 *Loading current rates...*"
     }
 }
 
@@ -351,37 +331,26 @@ async def handle_callback(call: types.CallbackQuery):
         # Показываем сообщение о загрузке
         await call.message.answer(get_text(uid, 'loading_rates'), parse_mode="Markdown")
         
-        # Получаем курс USDT/RUB с P2P (с заголовками браузера)
-        usdt_rub = await get_usdt_rub()
+        # Получаем курсы (стабильная функция)
+        usdt_rub, btc_rub, eth_rub = await get_crypto_rates()
+
         if usdt_rub is None:
-            await call.message.answer("❌ *Не удалось загрузить курс USDT/RUB с Binance P2P. Попробуйте позже.*", parse_mode="Markdown")
+            await call.message.answer("❌ *Не удалось загрузить курсы. Попробуйте позже.*", parse_mode="Markdown")
             await call.answer()
             return
-        
-        # Получаем курсы BTC/USDT и ETH/USDT
-        btc_usdt, eth_usdt = await get_crypto_usdt()
-        if btc_usdt is None or eth_usdt is None:
-            await call.message.answer("❌ *Не удалось загрузить курсы BTC/ETH с Binance. Попробуйте позже.*", parse_mode="Markdown")
-            await call.answer()
-            return
-        
-        # Рассчитываем рубли
-        btc_rub = btc_usdt * usdt_rub
-        eth_rub = eth_usdt * usdt_rub
-        
-        # Рассчитываем покупку (+10%)
+
+        # Рассчитываем комиссию MOSS PAY (+10% на покупку, -2% на продажу)
         btc_buy = btc_rub * 1.10
         eth_buy = eth_rub * 1.10
         usdt_buy = usdt_rub * 1.10
-        
-        # Рассчитываем продажу (-2%)
+
         btc_sell = btc_rub * 0.98
         eth_sell = eth_rub * 0.98
         usdt_sell = usdt_rub * 0.98
-        
+
         if get_lang(uid) == 'ru':
             text = (
-                f"📊 *Рыночные курсы (Binance):*\n"
+                f"📊 *Рыночные курсы:*\n"
                 f"└ USDT: {usdt_rub:.2f} ₽\n"
                 f"└ BTC: {btc_rub:,.0f} ₽\n"
                 f"└ ETH: {eth_rub:,.0f} ₽\n\n"
@@ -397,11 +366,11 @@ async def handle_callback(call: types.CallbackQuery):
                 f"└ ETH: {eth_sell:,.0f} ₽\n\n"
                 
                 f"⚙️ *Комиссия MOSS PAY:* покупка +10%, продажа -2%\n"
-                f"🔄 *Курсы обновляются автоматически с Binance*"
+                f"🔄 *Курсы обновляются автоматически*"
             )
         else:
             text = (
-                f"📊 *Market rates (Binance):*\n"
+                f"📊 *Market rates:*\n"
                 f"└ USDT: {usdt_rub:.2f} RUB\n"
                 f"└ BTC: {btc_rub:,.0f} RUB\n"
                 f"└ ETH: {eth_rub:,.0f} RUB\n\n"
@@ -417,7 +386,7 @@ async def handle_callback(call: types.CallbackQuery):
                 f"└ ETH: {eth_sell:,.0f} RUB\n\n"
                 
                 f"⚙️ *MOSS PAY fee:* buy +10%, sell -2%\n"
-                f"🔄 *Rates updated automatically from Binance*"
+                f"🔄 *Rates updated automatically*"
             )
         
         await call.message.answer(text, parse_mode="Markdown", reply_markup=main_menu(uid))
