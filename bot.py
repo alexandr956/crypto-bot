@@ -1,4 +1,6 @@
 import asyncio
+import sqlite3
+import time
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -7,6 +9,7 @@ from threading import Thread
 import os
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = 8177854087  # ТВОЙ TELEGRAM ID
 
 app = Flask('')
 
@@ -24,6 +27,24 @@ def keep_alive():
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+# ========== БАЗА ДАННЫХ ==========
+conn = sqlite3.connect('exchange_bot.db', check_same_thread=False)
+cur = conn.cursor()
+cur.execute('''
+    CREATE TABLE IF NOT EXISTS orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        username TEXT,
+        full_name TEXT,
+        type TEXT,
+        coin TEXT,
+        amount REAL,
+        status TEXT,
+        created_at INTEGER
+    )
+''')
+conn.commit()
 
 # Временное хранилище для выбора валюты
 user_choice = {}
@@ -66,25 +87,21 @@ async def start(message: types.Message):
 async def handle_callback(call: types.CallbackQuery):
     data = call.data
     
-    # Назад в главное меню
     if data == "main":
         await call.message.edit_reply_markup(reply_markup=main_menu())
         await call.answer()
         return
     
-    # Покупка
     if data == "buy":
         await call.message.edit_reply_markup(reply_markup=buy_menu())
         await call.answer()
         return
     
-    # Продажа
     if data == "sell":
         await call.message.edit_reply_markup(reply_markup=sell_menu())
         await call.answer()
         return
     
-    # Курсы
     if data == "rates":
         text = (
             "📊 *Рыночные курсы:*\n"
@@ -105,13 +122,11 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Тест
     if data == "test":
         await call.message.answer("✅ Кнопка работает!", reply_markup=main_menu())
         await call.answer()
         return
     
-    # Выбор валюты для покупки
     if data.startswith("buy_"):
         coin = data.split("_")[1]
         user_choice[call.from_user.id] = ("buy", coin)
@@ -119,7 +134,6 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Выбор валюты для продажи
     if data.startswith("sell_"):
         coin = data.split("_")[1]
         user_choice[call.from_user.id] = ("sell", coin)
@@ -142,14 +156,69 @@ async def handle_amount(message: types.Message):
         action, coin = user_choice[uid]
         type_text = "Покупка" if action == "buy" else "Продажа"
         
-        # Пока просто подтверждение (базу данных добавим позже)
-        await message.answer(f"✅ *Заявка создана!*\n\n{type_text} {coin} на {rub:,.0f} ₽\n\n📞 *Оператор свяжется с вами*", parse_mode="Markdown", reply_markup=main_menu())
+        # Сохраняем заявку в базу данных
+        cur.execute('''
+            INSERT INTO orders (user_id, username, full_name, type, coin, amount, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            uid,
+            message.from_user.username,
+            message.from_user.full_name,
+            action,
+            coin,
+            rub,
+            "new",
+            int(time.time())
+        ))
+        conn.commit()
+        order_id = cur.lastrowid
+        
+        # Подтверждение пользователю
+        await message.answer(
+            f"✅ *Заявка #{order_id} создана!*\n\n"
+            f"{type_text} {coin} на {rub:,.0f} ₽\n\n"
+            f"📞 *Оператор свяжется с вами*",
+            parse_mode="Markdown",
+            reply_markup=main_menu()
+        )
+        
+        # Уведомление админу
+        username = f"@{message.from_user.username}" if message.from_user.username else "нет username"
+        await bot.send_message(
+            ADMIN_ID,
+            f"🆕 *НОВАЯ ЗАЯВКА #{order_id}*\n\n"
+            f"📌 {type_text} {coin}\n"
+            f"💰 Сумма: {rub:,.0f} ₽\n"
+            f"👤 Пользователь: {message.from_user.full_name}\n"
+            f"{username}\n"
+            f"🆔 ID: {uid}",
+            parse_mode="Markdown"
+        )
         
         # Удаляем выбор пользователя
         del user_choice[uid]
         
     except ValueError:
         await message.answer("❌ *Введи число, например: 5000*", parse_mode="Markdown")
+
+# Команда для админа — посмотреть заявки
+@dp.message(Command("orders"))
+async def admin_orders(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    cur.execute('SELECT id, type, coin, amount, status FROM orders WHERE status = "new" ORDER BY created_at DESC')
+    orders = cur.fetchall()
+    
+    if not orders:
+        await message.answer("📭 *Нет новых заявок*", parse_mode="Markdown")
+        return
+    
+    text = "📋 *Новые заявки:*\n\n"
+    for order in orders:
+        text += f"#{order[0]} | {order[1]} {order[2]} | {order[3]:,.0f} ₽ | {order[4]}\n"
+    
+    await message.answer(text, parse_mode="Markdown")
 
 async def main():
     print("✅ Бот запущен")
