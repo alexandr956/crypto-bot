@@ -40,7 +40,8 @@ async def start(message: types.Message):
 
 @dp.callback_query(lambda c: c.data == "test")
 async def test_callback(call: types.CallbackQuery):
-    await call.message.edit_text("✅ Кнопка работает!", reply_markup=main_menu())
+    # Отправляем новое сообщение вместо редактирования старого
+    await call.message.answer("✅ Кнопка работает!", reply_markup=main_menu())
     await call.answer()
 
 async def main():
