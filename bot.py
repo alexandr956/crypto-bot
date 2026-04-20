@@ -40,8 +40,10 @@ cur.execute('''
         type TEXT,
         coin TEXT,
         amount REAL,
-        status TEXT,
-        created_at INTEGER
+        crypto_amount REAL,
+        status TEXT DEFAULT 'pending',
+        created_at INTEGER,
+        updated_at INTEGER
     )
 ''')
 cur.execute('''
@@ -119,6 +121,54 @@ def calculate_crypto_amount(rub, coin, action, rates):
     
     return crypto
 
+# ========== ФУНКЦИЯ ДЛЯ ОБНОВЛЕНИЯ СТАТУСА ==========
+async def update_order_status(order_id, new_status, user_id=None, admin_id=ADMIN_ID):
+    """Обновляет статус заявки и уведомляет клиента и админа"""
+    cur.execute('SELECT user_id, type, coin, amount, crypto_amount FROM orders WHERE id = ?', (order_id,))
+    order = cur.fetchone()
+    if not order:
+        return
+    
+    user_id_db, o_type, coin, amount, crypto = order
+    
+    cur.execute('UPDATE orders SET status = ?, updated_at = ? WHERE id = ?', (new_status, int(time.time()), order_id))
+    conn.commit()
+    
+    # Статусы и их отображение
+    status_display = {
+        'pending': '🟡 Ожидает обработки',
+        'processing': '🔵 В обработке',
+        'completed': '🟢 Выполнена',
+        'rejected': '🔴 Отклонена',
+        'cancelled': '⚫ Отменена'
+    }
+    
+    status_text = status_display.get(new_status, new_status)
+    type_text = "Покупка" if o_type == "buy" else "Продажа"
+    
+    # Уведомляем клиента
+    user_lang = get_lang(user_id_db)
+    if user_lang == 'ru':
+        await bot.send_message(
+            user_id_db,
+            f"✅ *Статус заявки #{order_id} обновлён*\n\n"
+            f"📌 {type_text} {coin}\n"
+            f"💰 Сумма: {amount:,.0f} ₽\n"
+            f"🪙 Крипта: {crypto:.8f} {coin}\n"
+            f"📊 *Новый статус:* {status_text}",
+            parse_mode="Markdown"
+        )
+    else:
+        await bot.send_message(
+            user_id_db,
+            f"✅ *Order #{order_id} status updated*\n\n"
+            f"📌 {type_text} {coin}\n"
+            f"💰 Amount: {amount:,.0f} RUB\n"
+            f"🪙 Crypto: {crypto:.8f} {coin}\n"
+            f"📊 *New status:* {status_text}",
+            parse_mode="Markdown"
+        )
+
 # ========== ТЕКСТЫ ==========
 TEXTS = {
     'ru': {
@@ -133,12 +183,10 @@ TEXTS = {
         'select_sell': "💰 *Введи сумму в рублях для продажи {coin}:*\n📊 *Лимиты:* 1 000 - 50 000 ₽",
         'limit_error': "❌ *Сумма должна быть от 1 000 до 50 000 ₽*",
         'confirm_order': "💰 *Вы ввели:* {amount} ₽\n🪙 *Вы получите:* {crypto:.8f} {coin}\n📊 *Лимиты:* 1 000 - 50 000 ₽\n\n✅ *Подтвердить заявку?*",
-        'order_created': "✅ *Заявка #{id} создана!*\n\n{type} {coin} на {amount} ₽\n\n📞 *Оператор свяжется с вами*",
+        'order_created': "✅ *Заявка #{id} создана!*\n\n📌 {type} {coin}\n💰 Сумма: {amount} ₽\n🪙 Крипта: {crypto:.8f} {coin}\n📊 Статус: 🟡 Ожидает обработки\n\n📞 *Оператор свяжется с вами*",
         'order_cancelled': "❌ *Заявка отменена*",
-        'order_accepted': "✅ *Ваша заявка #{id} принята!*\n\nОператор скоро свяжется с вами.",
-        'order_rejected': "❌ *Ваша заявка #{id} отклонена!*\n\nВы можете создать новую заявку.",
-        'no_orders': "📭 *Нет новых заявок*",
-        'orders_title': "📋 *Новые заявки:*\n\n",
+        'no_orders': "📭 *Нет заявок*",
+        'orders_title': "📋 *Ваши заявки:*\n\n",
         'type_buy': "Покупка",
         'type_sell': "Продажа",
         'change_lang': "🌐 Сменить язык",
@@ -188,12 +236,10 @@ TEXTS = {
         'select_sell': "💰 *Enter amount in RUB to sell {coin}:*\n📊 *Limits:* 1,000 - 50,000 RUB",
         'limit_error': "❌ *Amount must be between 1,000 and 50,000 RUB*",
         'confirm_order': "💰 *You entered:* {amount} RUB\n🪙 *You will receive:* {crypto:.8f} {coin}\n📊 *Limits:* 1,000 - 50,000 RUB\n\n✅ *Confirm order?*",
-        'order_created': "✅ *Order #{id} created!*\n\n{type} {coin} for {amount} RUB\n\n📞 *Operator will contact you*",
+        'order_created': "✅ *Order #{id} created!*\n\n📌 {type} {coin}\n💰 Amount: {amount} RUB\n🪙 Crypto: {crypto:.8f} {coin}\n📊 Status: 🟡 Pending\n\n📞 *Operator will contact you*",
         'order_cancelled': "❌ *Order cancelled*",
-        'order_accepted': "✅ *Your order #{id} has been accepted!*\n\nOperator will contact you shortly.",
-        'order_rejected': "❌ *Your order #{id} has been rejected!*\n\nYou can create a new order.",
-        'no_orders': "📭 *No new orders*",
-        'orders_title': "📋 *New orders:*\n\n",
+        'no_orders': "📭 *No orders*",
+        'orders_title': "📋 *Your orders:*\n\n",
         'type_buy': "Purchase",
         'type_sell': "Sale",
         'change_lang': "🌐 Change language",
@@ -281,6 +327,21 @@ def confirm_menu(order_id):
          InlineKeyboardButton(text="❌ Нет", callback_data=f"confirm_no_{order_id}")]
     ])
 
+def order_buttons(order_id, status):
+    """Кнопки для админа в зависимости от статуса заявки"""
+    if status == 'pending':
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="▶️ В обработку", callback_data=f"process_{order_id}"),
+             InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{order_id}")]
+        ])
+    elif status == 'processing':
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Выполнить", callback_data=f"complete_{order_id}"),
+             InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{order_id}")]
+        ])
+    else:
+        return None
+
 def lang_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang_ru")],
@@ -299,12 +360,6 @@ def admin_menu():
         [InlineKeyboardButton(text="📋 Список заявок", callback_data="admin_orders")],
         [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="main")]
-    ])
-
-def order_buttons(order_id):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Принять", callback_data=f"accept_{order_id}"),
-         InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{order_id}")]
     ])
 
 @dp.message(Command("start"))
@@ -351,16 +406,16 @@ async def handle_callback(call: types.CallbackQuery):
         type_text = get_text(uid, 'type_buy') if action == "buy" else get_text(uid, 'type_sell')
         
         cur.execute('''
-            INSERT INTO orders (user_id, username, full_name, type, coin, amount, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (uid, call.from_user.username, call.from_user.full_name, action, coin, rub, "new", int(time.time())))
+            INSERT INTO orders (user_id, username, full_name, type, coin, amount, crypto_amount, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (uid, call.from_user.username, call.from_user.full_name, action, coin, rub, crypto, 'pending', int(time.time()), int(time.time())))
         order_id_db = cur.lastrowid
         conn.commit()
         
         del pending_orders[order_id]
         
         await call.message.edit_text(
-            get_text(uid, 'order_created', id=order_id_db, type=type_text, coin=coin, amount=f"{rub:,.0f}"),
+            get_text(uid, 'order_created', id=order_id_db, type=type_text, coin=coin, amount=f"{rub:,.0f}", crypto=crypto),
             parse_mode="Markdown",
             reply_markup=main_menu(uid)
         )
@@ -374,9 +429,10 @@ async def handle_callback(call: types.CallbackQuery):
             f"🪙 Крипта: {crypto:.8f} {coin}\n"
             f"👤 Пользователь: {call.from_user.full_name}\n"
             f"{username}\n"
-            f"🆔 ID: {uid}",
+            f"🆔 ID: {uid}\n"
+            f"📊 Статус: 🟡 Ожидает",
             parse_mode="Markdown",
-            reply_markup=order_buttons(order_id_db)
+            reply_markup=order_buttons(order_id_db, 'pending')
         )
         await call.answer()
         return
@@ -500,12 +556,12 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Админ панель
+    # Админ панель - список заявок
     if data == "admin_orders":
         if uid != ADMIN_ID:
             await call.answer("Доступ запрещен", show_alert=True)
             return
-        cur.execute('SELECT id, type, coin, amount, status FROM orders WHERE status = "new" ORDER BY created_at DESC')
+        cur.execute('SELECT id, type, coin, amount, status FROM orders WHERE status != "completed" ORDER BY created_at DESC')
         orders = cur.fetchall()
         if not orders:
             await call.message.answer(get_text(ADMIN_ID, 'no_orders'), parse_mode="Markdown")
@@ -513,24 +569,37 @@ async def handle_callback(call: types.CallbackQuery):
             for order in orders:
                 order_id, o_type, coin, amount, status = order
                 type_text = "Покупка" if o_type == "buy" else "Продажа"
-                text = f"📋 *Заявка #{order_id}*\n\n{type_text} {coin}\n💰 {amount:,.0f} ₽\nСтатус: {status}"
-                await call.message.answer(text, parse_mode="Markdown", reply_markup=order_buttons(order_id))
+                status_display = {
+                    'pending': '🟡 Ожидает',
+                    'processing': '🔵 В обработке',
+                    'rejected': '🔴 Отклонена',
+                    'cancelled': '⚫ Отменена'
+                }
+                status_text = status_display.get(status, status)
+                text = f"📋 *Заявка #{order_id}*\n\n{type_text} {coin}\n💰 {amount:,.0f} ₽\n📊 Статус: {status_text}"
+                await call.message.answer(text, parse_mode="Markdown", reply_markup=order_buttons(order_id, status))
         await call.answer()
         return
     
+    # Админ панель - статистика
     if data == "admin_stats":
         if uid != ADMIN_ID:
             await call.answer("Доступ запрещен", show_alert=True)
             return
-        cur.execute('SELECT COUNT(*), SUM(amount) FROM orders WHERE status = "new"')
-        new_orders, new_sum = cur.fetchone()
+        cur.execute('SELECT COUNT(*), SUM(amount) FROM orders WHERE status = "pending"')
+        pending_orders_count, pending_sum = cur.fetchone()
+        cur.execute('SELECT COUNT(*), SUM(amount) FROM orders WHERE status = "processing"')
+        processing_orders, processing_sum = cur.fetchone()
+        cur.execute('SELECT COUNT(*), SUM(amount) FROM orders WHERE status = "completed"')
+        completed_orders, completed_sum = cur.fetchone()
         cur.execute('SELECT COUNT(*), SUM(amount) FROM orders')
         total_orders, total_sum = cur.fetchone()
         
         text = (
             "📊 *Статистика:*\n\n"
-            f"🆕 Новых заявок: {new_orders or 0}\n"
-            f"💰 Сумма новых: {new_sum or 0:,.0f} ₽\n\n"
+            f"🟡 Ожидают: {pending_orders_count or 0} (на {pending_sum or 0:,.0f} ₽)\n"
+            f"🔵 В обработке: {processing_orders or 0} (на {processing_sum or 0:,.0f} ₽)\n"
+            f"🟢 Выполнено: {completed_orders or 0} (на {completed_sum or 0:,.0f} ₽)\n\n"
             f"📦 Всего заявок: {total_orders or 0}\n"
             f"💵 Общая сумма: {total_sum or 0:,.0f} ₽"
         )
@@ -538,26 +607,24 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Обработка принятия/отклонения заявки
-    if data.startswith("accept_"):
+    # Обработка админских кнопок (статусы)
+    if data.startswith("process_"):
         if uid != ADMIN_ID:
             await call.answer("Доступ запрещен", show_alert=True)
             return
         order_id = int(data.split("_")[1])
-        cur.execute('SELECT user_id, type, coin, amount FROM orders WHERE id = ?', (order_id,))
-        order = cur.fetchone()
-        if order:
-            user_id, o_type, coin, amount = order
-            cur.execute('UPDATE orders SET status = "accepted" WHERE id = ?', (order_id,))
-            conn.commit()
-            
-            user_lang = get_lang(user_id)
-            if user_lang == 'ru':
-                await bot.send_message(user_id, f"✅ *Ваша заявка #{order_id} принята!*\n\nОператор скоро свяжется с вами.", parse_mode="Markdown")
-            else:
-                await bot.send_message(user_id, f"✅ *Your order #{order_id} has been accepted!*\n\nOperator will contact you shortly.", parse_mode="Markdown")
-            
-            await call.message.edit_text(f"✅ Заявка #{order_id} принята!", reply_markup=None)
+        await update_order_status(order_id, 'processing')
+        await call.message.edit_text(f"✅ Заявка #{order_id} переведена в статус «В обработке»", reply_markup=order_buttons(order_id, 'processing'))
+        await call.answer()
+        return
+    
+    if data.startswith("complete_"):
+        if uid != ADMIN_ID:
+            await call.answer("Доступ запрещен", show_alert=True)
+            return
+        order_id = int(data.split("_")[1])
+        await update_order_status(order_id, 'completed')
+        await call.message.edit_text(f"✅ Заявка #{order_id} выполнена!", reply_markup=None)
         await call.answer()
         return
     
@@ -566,24 +633,12 @@ async def handle_callback(call: types.CallbackQuery):
             await call.answer("Доступ запрещен", show_alert=True)
             return
         order_id = int(data.split("_")[1])
-        cur.execute('SELECT user_id, type, coin, amount FROM orders WHERE id = ?', (order_id,))
-        order = cur.fetchone()
-        if order:
-            user_id, o_type, coin, amount = order
-            cur.execute('UPDATE orders SET status = "rejected" WHERE id = ?', (order_id,))
-            conn.commit()
-            
-            user_lang = get_lang(user_id)
-            if user_lang == 'ru':
-                await bot.send_message(user_id, f"❌ *Ваша заявка #{order_id} отклонена!*\n\nВы можете создать новую заявку.", parse_mode="Markdown")
-            else:
-                await bot.send_message(user_id, f"❌ *Your order #{order_id} has been rejected!*\n\nYou can create a new order.", parse_mode="Markdown")
-            
-            await call.message.edit_text(f"❌ Заявка #{order_id} отклонена!", reply_markup=None)
+        await update_order_status(order_id, 'rejected')
+        await call.message.edit_text(f"❌ Заявка #{order_id} отклонена!", reply_markup=None)
         await call.answer()
         return
     
-    # Выбор валюты для покупки (сохраняем в pending)
+    # Выбор валюты для покупки
     if data.startswith("buy_"):
         coin = data.split("_")[1]
         rates = await get_crypto_rates()
@@ -597,7 +652,7 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Выбор валюты для продажи (сохраняем в pending)
+    # Выбор валюты для продажи
     if data.startswith("sell_"):
         coin = data.split("_")[1]
         rates = await get_crypto_rates()
@@ -645,22 +700,32 @@ async def handle_amount(message: types.Message):
         await message.answer(get_text(uid, 'limit_error'), parse_mode="Markdown")
 
 @dp.message(Command("orders"))
-async def admin_orders(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    
-    cur.execute('SELECT id, type, coin, amount, status FROM orders WHERE status = "new" ORDER BY created_at DESC')
+async def user_orders(message: types.Message):
+    uid = message.from_user.id
+    cur.execute('SELECT id, type, coin, amount, status, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 10', (uid,))
     orders = cur.fetchall()
     
     if not orders:
-        await message.answer(get_text(ADMIN_ID, 'no_orders'), parse_mode="Markdown")
+        await message.answer(get_text(uid, 'no_orders'), parse_mode="Markdown")
         return
     
+    status_display = {
+        'pending': '🟡 Ожидает обработки',
+        'processing': '🔵 В обработке',
+        'completed': '🟢 Выполнена',
+        'rejected': '🔴 Отклонена',
+        'cancelled': '⚫ Отменена'
+    }
+    
+    text = get_text(uid, 'orders_title')
     for order in orders:
-        order_id, o_type, coin, amount, status = order
+        order_id, o_type, coin, amount, status, created_at = order
         type_text = "Покупка" if o_type == "buy" else "Продажа"
-        text = f"📋 *Заявка #{order_id}*\n\n{type_text} {coin}\n💰 {amount:,.0f} ₽\nСтатус: {status}"
-        await message.answer(text, parse_mode="Markdown", reply_markup=order_buttons(order_id))
+        status_text = status_display.get(status, status)
+        date = time.strftime('%d.%m %H:%M', time.localtime(created_at))
+        text += f"📌 #{order_id} | {type_text} {coin}\n   💰 {amount:,.0f} ₽ | {status_text} | {date}\n\n"
+    
+    await message.answer(text, parse_mode="Markdown")
 
 async def main():
     print("✅ Бот запущен")
