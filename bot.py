@@ -27,6 +27,7 @@ dp = Dispatcher()
 
 def main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Курсы", callback_data="rates")],
         [InlineKeyboardButton(text="🔴 ТЕСТ", callback_data="test")]
     ])
 
@@ -40,8 +41,19 @@ async def start(message: types.Message):
 
 @dp.callback_query(lambda c: c.data == "test")
 async def test_callback(call: types.CallbackQuery):
-    # Отправляем новое сообщение вместо редактирования старого
     await call.message.answer("✅ Кнопка работает!", reply_markup=main_menu())
+    await call.answer()
+
+@dp.callback_query(lambda c: c.data == "rates")
+async def rates_callback(call: types.CallbackQuery):
+    text = (
+        "📊 *Актуальные курсы:*\n\n"
+        "└ *USDT:* 82,81 ₽\n"
+        "└ *BTC:* 5 725 873 ₽\n"
+        "└ *ETH:* 174 639 ₽\n\n"
+        "📞 *Точный курс уточняйте у оператора*"
+    )
+    await call.message.answer(text, parse_mode="Markdown", reply_markup=main_menu())
     await call.answer()
 
 async def main():
