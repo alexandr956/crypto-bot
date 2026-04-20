@@ -6,11 +6,8 @@ from flask import Flask
 from threading import Thread
 import os
 
-# ========== ТОКЕН ==========
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-# ===========================
 
-# Минимальный веб-сервер для Render
 app = Flask('')
 
 @app.route('/')
@@ -25,20 +22,25 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
-# ========== ТЕЛЕГРАМ-БОТ ==========
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-@dp.message(Command("start"))
-async def start(message: types.Message):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
+def main_menu():
+    return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔴 ТЕСТ", callback_data="test")]
     ])
-    await message.answer("🏦 Добро пожаловать! Нажми кнопку:", reply_markup=kb)
+
+@dp.message(Command("start"))
+async def start(message: types.Message):
+    photo_url = "https://raw.githubusercontent.com/alexandr956/crypto-bot/main/welcome.jpg"
+    try:
+        await message.answer_photo(photo_url, caption="🏦 *Добро пожаловать в КриптоОбменник!*", parse_mode="Markdown", reply_markup=main_menu())
+    except:
+        await message.answer("🏦 *Добро пожаловать в КриптоОбменник!*", parse_mode="Markdown", reply_markup=main_menu())
 
 @dp.callback_query(lambda c: c.data == "test")
 async def test_callback(call: types.CallbackQuery):
-    await call.message.edit_text("✅ Кнопка работает!")
+    await call.message.edit_text("✅ Кнопка работает!", reply_markup=main_menu())
     await call.answer()
 
 async def main():
@@ -46,5 +48,5 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    keep_alive()  # Запускаем веб-сервер в фоне
+    keep_alive()
     asyncio.run(main())
