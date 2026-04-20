@@ -55,42 +55,49 @@ conn.commit()
 
 user_choice = {}
 
-# ========== ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ КУРСОВ (СТАБИЛЬНАЯ) ==========
+# ========== ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ КУРСОВ (KuCoin + ЦБ РФ) ==========
 async def get_crypto_rates():
     """
-    Получает курсы BTC/RUB, ETH/RUB и USDT/RUB.
-    BTC/RUB и ETH/RUB: Binance Spot (BTC/USDT, ETH/USDT) * курс USD/RUB от ЦБ РФ
+    Получает курсы с KuCoin API (публичные эндпоинты, без ключей)
+    BTC/RUB и ETH/RUB: KuCoin (BTC/USDT, ETH/USDT) * курс USD/RUB от ЦБ РФ
     USDT/RUB: курс USD/RUB от ЦБ РФ (USDT привязан к доллару)
     """
     try:
         async with aiohttp.ClientSession() as session:
-            # 1. Получаем курс USD/RUB от ЦБ РФ (самый стабильный источник)
+            # 1. Получаем курс BTC/USDT с KuCoin
+            async with session.get("https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=BTC-USDT") as resp:
+                btc_data = await resp.json()
+                if btc_data.get('code') == '200000':
+                    btc_usdt = float(btc_data['data']['price'])
+                else:
+                    print(f"KuCoin BTC error: {btc_data}")
+                    return None, None, None
+            
+            # 2. Получаем курс ETH/USDT с KuCoin
+            async with session.get("https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=ETH-USDT") as resp:
+                eth_data = await resp.json()
+                if eth_data.get('code') == '200000':
+                    eth_usdt = float(eth_data['data']['price'])
+                else:
+                    print(f"KuCoin ETH error: {eth_data}")
+                    return None, None, None
+            
+            # 3. Получаем курс USD/RUB от ЦБ РФ (стабильный резерв)
             async with session.get("https://www.cbr-xml-daily.ru/daily_json.js") as resp:
                 cbr_data = await resp.json()
                 usd_to_rub = float(cbr_data['Valute']['USD']['Value'])
-                print(f"DEBUG: Курс USD/RUB от ЦБ: {usd_to_rub}")
-
-            # 2. Получаем курсы BTC/USDT и ETH/USDT с Binance Spot (публичный API)
-            async with session.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT") as resp:
-                btc_data = await resp.json()
-                btc_usdt = float(btc_data['price'])
-
-            async with session.get("https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT") as resp:
-                eth_data = await resp.json()
-                eth_usdt = float(eth_data['price'])
-                
-            print(f"DEBUG: Курсы с Binance: BTC={btc_usdt}, ETH={eth_usdt}")
-
-            # 3. Рассчитываем курсы в рублях
+            
+            # 4. Рассчитываем курсы в рублях
             btc_rub = btc_usdt * usd_to_rub
             eth_rub = eth_usdt * usd_to_rub
-            
-            # 4. Курс USDT/RUB: USDT привязан к доллару 1:1
             usdt_rub = usd_to_rub
-
+            
+            print(f"DEBUG: KuCoin BTC={btc_usdt}, ETH={eth_usdt}, USD/RUB={usd_to_rub}")
+            
             return usdt_rub, btc_rub, eth_rub
+            
     except Exception as e:
-        print(f"КРИТИЧЕСКАЯ ОШИБКА при получении курсов: {e}")
+        print(f"КРИТИЧЕСКАЯ ОШИБКА KuCoin: {e}")
         return None, None, None
 
 # ========== ТЕКСТЫ ==========
@@ -142,7 +149,7 @@ TEXTS = {
         'admin_panel': "🔧 *Панель администратора*\n\nВыберите действие:",
         'admin_orders_btn': "📋 Список заявок",
         'admin_stats_btn': "📊 Статистика",
-        'loading_rates': "🔄 *Загружаю актуальные курсы...*"
+        'loading_rates': "🔄 *Загружаю актуальные курсы с KuCoin...*"
     },
     'en': {
         'welcome': "👋 *Hi {name}!*\n\n🏦 *Welcome to MOSS PAY Crypto Exchanger*\n\n💎 *Why choose us:*\n• 🚀 Instant orders\n• 🔒 Secure transactions\n• 💬 24/7 support\n• 💰 Best rates\n\n👇 *Select an action below*",
@@ -191,7 +198,7 @@ TEXTS = {
         'admin_panel': "🔧 *Admin panel*\n\nSelect action:",
         'admin_orders_btn': "📋 Orders list",
         'admin_stats_btn': "📊 Statistics",
-        'loading_rates': "🔄 *Loading current rates...*"
+        'loading_rates': "🔄 *Loading live rates from KuCoin...*"
     }
 }
 
@@ -331,11 +338,11 @@ async def handle_callback(call: types.CallbackQuery):
         # Показываем сообщение о загрузке
         await call.message.answer(get_text(uid, 'loading_rates'), parse_mode="Markdown")
         
-        # Получаем курсы (стабильная функция)
+        # Получаем курсы с KuCoin
         usdt_rub, btc_rub, eth_rub = await get_crypto_rates()
 
         if usdt_rub is None:
-            await call.message.answer("❌ *Не удалось загрузить курсы. Попробуйте позже.*", parse_mode="Markdown")
+            await call.message.answer("❌ *Не удалось загрузить курсы с KuCoin. Попробуйте позже.*", parse_mode="Markdown")
             await call.answer()
             return
 
@@ -350,7 +357,7 @@ async def handle_callback(call: types.CallbackQuery):
 
         if get_lang(uid) == 'ru':
             text = (
-                f"📊 *Рыночные курсы:*\n"
+                f"📊 *Рыночные курсы (KuCoin):*\n"
                 f"└ USDT: {usdt_rub:.2f} ₽\n"
                 f"└ BTC: {btc_rub:,.0f} ₽\n"
                 f"└ ETH: {eth_rub:,.0f} ₽\n\n"
@@ -366,11 +373,11 @@ async def handle_callback(call: types.CallbackQuery):
                 f"└ ETH: {eth_sell:,.0f} ₽\n\n"
                 
                 f"⚙️ *Комиссия MOSS PAY:* покупка +10%, продажа -2%\n"
-                f"🔄 *Курсы обновляются автоматически*"
+                f"🔄 *Курсы обновляются автоматически с KuCoin*"
             )
         else:
             text = (
-                f"📊 *Market rates:*\n"
+                f"📊 *Market rates (KuCoin):*\n"
                 f"└ USDT: {usdt_rub:.2f} RUB\n"
                 f"└ BTC: {btc_rub:,.0f} RUB\n"
                 f"└ ETH: {eth_rub:,.0f} RUB\n\n"
@@ -386,7 +393,7 @@ async def handle_callback(call: types.CallbackQuery):
                 f"└ ETH: {eth_sell:,.0f} RUB\n\n"
                 
                 f"⚙️ *MOSS PAY fee:* buy +10%, sell -2%\n"
-                f"🔄 *Rates updated automatically*"
+                f"🔄 *Rates updated automatically from KuCoin*"
             )
         
         await call.message.answer(text, parse_mode="Markdown", reply_markup=main_menu(uid))
