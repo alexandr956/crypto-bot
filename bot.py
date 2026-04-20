@@ -11,9 +11,12 @@ import os
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 8177854087
 
-# Настройки лимитов (по умолчанию)
-MIN_LIMIT = 1000
-MAX_LIMIT = 50000
+# Настройки по умолчанию
+DEFAULT_MIN_LIMIT = 1000
+DEFAULT_MAX_LIMIT = 50000
+DEFAULT_MARKET_USDT = 91.50
+DEFAULT_MARKET_BTC = 5500000
+DEFAULT_MARKET_ETH = 220000
 
 app = Flask('')
 
@@ -62,28 +65,57 @@ cur.execute('''
         value TEXT
     )
 ''')
-# Сохраняем лимиты в базу при первом запуске
-cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('min_limit', ?)", (str(MIN_LIMIT),))
-cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('max_limit', ?)", (str(MAX_LIMIT),))
+# Сохраняем настройки при первом запуске
+cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('min_limit', ?)", (str(DEFAULT_MIN_LIMIT),))
+cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('max_limit', ?)", (str(DEFAULT_MAX_LIMIT),))
+cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('market_usdt', ?)", (str(DEFAULT_MARKET_USDT),))
+cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('market_btc', ?)", (str(DEFAULT_MARKET_BTC),))
+cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('market_eth', ?)", (str(DEFAULT_MARKET_ETH),))
 conn.commit()
 
-def get_min_limit():
-    cur.execute("SELECT value FROM settings WHERE key = 'min_limit'")
+def get_setting(key, default):
+    cur.execute("SELECT value FROM settings WHERE key = ?", (key,))
     row = cur.fetchone()
-    return int(row[0]) if row else MIN_LIMIT
+    if row:
+        try:
+            return float(row[0]) if '.' in row[0] else int(row[0])
+        except:
+            return default
+    return default
+
+def set_setting(key, value):
+    cur.execute("UPDATE settings SET value = ? WHERE key = ?", (str(value), key))
+    conn.commit()
+
+def get_min_limit():
+    return get_setting('min_limit', DEFAULT_MIN_LIMIT)
 
 def get_max_limit():
-    cur.execute("SELECT value FROM settings WHERE key = 'max_limit'")
-    row = cur.fetchone()
-    return int(row[0]) if row else MAX_LIMIT
+    return get_setting('max_limit', DEFAULT_MAX_LIMIT)
+
+def get_market_usdt():
+    return get_setting('market_usdt', DEFAULT_MARKET_USDT)
+
+def get_market_btc():
+    return get_setting('market_btc', DEFAULT_MARKET_BTC)
+
+def get_market_eth():
+    return get_setting('market_eth', DEFAULT_MARKET_ETH)
+
+def set_market_usdt(value):
+    set_setting('market_usdt', value)
+
+def set_market_btc(value):
+    set_setting('market_btc', value)
+
+def set_market_eth(value):
+    set_setting('market_eth', value)
 
 def set_min_limit(value):
-    cur.execute("UPDATE settings SET value = ? WHERE key = 'min_limit'", (str(value),))
-    conn.commit()
+    set_setting('min_limit', value)
 
 def set_max_limit(value):
-    cur.execute("UPDATE settings SET value = ? WHERE key = 'max_limit'", (str(value),))
-    conn.commit()
+    set_setting('max_limit', value)
 
 # Временное хранилище для неподтверждённых заявок
 pending_orders = {}
@@ -91,13 +123,11 @@ pending_orders = {}
 # ========== ФУНКЦИЯ ДЛЯ КУРСОВ ==========
 async def get_crypto_rates():
     """
-    Рыночные курсы. Ты меняешь эти три цифры, остальное считается автоматически.
+    Получает рыночные курсы из базы данных
     """
-    # ========== МЕНЯЙ ТОЛЬКО ЭТИ ТРИ ЦИФРЫ ==========
-    market_usdt = 91.50     # Рыночный курс USDT
-    market_btc = 5500000    # Рыночный курс BTC
-    market_eth = 220000     # Рыночный курс ETH
-    # ================================================
+    market_usdt = get_market_usdt()
+    market_btc = get_market_btc()
+    market_eth = get_market_eth()
     
     # Комиссия MOSS PAY (покупка +10%, продажа -2%)
     commission_buy = 1.10    # +10%
@@ -120,11 +150,6 @@ async def get_crypto_rates():
 
 # ========== ФУНКЦИЯ ДЛЯ РАСЧЁТА КРИПТЫ ==========
 def calculate_crypto_amount(rub, coin, action, rates):
-    """
-    Рассчитывает количество криптовалюты за указанную сумму в рублях.
-    action: 'buy' или 'sell'
-    coin: 'BTC', 'ETH', 'USDT', 'Rapira'
-    """
     if action == 'buy':
         if coin == 'BTC':
             price = rates['buy']['btc']
@@ -135,9 +160,9 @@ def calculate_crypto_amount(rub, coin, action, rates):
         elif coin == 'USDT':
             price = rates['buy']['usdt']
             crypto = rub / price
-        else:  # RapiraRUB (1:1 с рублём)
+        else:
             crypto = rub
-    else:  # sell
+    else:
         if coin == 'BTC':
             price = rates['sell']['btc']
             crypto = rub / price
@@ -147,14 +172,12 @@ def calculate_crypto_amount(rub, coin, action, rates):
         elif coin == 'USDT':
             price = rates['sell']['usdt']
             crypto = rub / price
-        else:  # RapiraRUB
+        else:
             crypto = rub
-    
     return crypto
 
 # ========== ФУНКЦИЯ ДЛЯ ОБНОВЛЕНИЯ СТАТУСА ==========
-async def update_order_status(order_id, new_status, user_id=None, admin_id=ADMIN_ID):
-    """Обновляет статус заявки и уведомляет клиента и админа"""
+async def update_order_status(order_id, new_status):
     cur.execute('SELECT user_id, type, coin, amount, crypto_amount FROM orders WHERE id = ?', (order_id,))
     order = cur.fetchone()
     if not order:
@@ -165,7 +188,6 @@ async def update_order_status(order_id, new_status, user_id=None, admin_id=ADMIN
     cur.execute('UPDATE orders SET status = ?, updated_at = ? WHERE id = ?', (new_status, int(time.time()), order_id))
     conn.commit()
     
-    # Статусы и их отображение
     status_display = {
         'pending': '🟡 Ожидает обработки',
         'processing': '🔵 В обработке',
@@ -177,7 +199,6 @@ async def update_order_status(order_id, new_status, user_id=None, admin_id=ADMIN
     status_text = status_display.get(new_status, new_status)
     type_text = "Покупка" if o_type == "buy" else "Продажа"
     
-    # Уведомляем клиента
     user_lang = get_lang(user_id_db)
     if user_lang == 'ru':
         await bot.send_message(
@@ -335,8 +356,6 @@ def main_menu(user_id):
     ])
 
 def buy_menu(user_id):
-    min_limit = get_min_limit()
-    max_limit = get_max_limit()
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💰 USDT", callback_data="buy_USDT")],
         [InlineKeyboardButton(text="₿ BTC", callback_data="buy_BTC")],
@@ -361,7 +380,6 @@ def confirm_menu(order_id):
     ])
 
 def order_buttons(order_id, status):
-    """Кнопки для админа в зависимости от статуса заявки"""
     if status == 'pending':
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="▶️ В обработку", callback_data=f"process_{order_id}"),
@@ -420,6 +438,67 @@ async def admin_panel(message: types.Message):
         return
     await message.answer(get_text(ADMIN_ID, 'admin_panel'), parse_mode="Markdown", reply_markup=admin_menu())
 
+# ========== КОМАНДА ДЛЯ ИЗМЕНЕНИЯ КУРСОВ ==========
+@dp.message(Command("setrates"))
+async def set_rates(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ Доступ запрещен")
+        return
+    
+    try:
+        parts = message.text.split()
+        if len(parts) != 3:
+            await message.answer(
+                "❌ *Неверный формат*\n\n"
+                "Используй:\n"
+                "`/setrates usdt 92.50`\n"
+                "`/setrates btc 5600000`\n"
+                "`/setrates eth 230000`\n\n"
+                f"📊 *Текущие курсы:*\n"
+                f"└ USDT: {get_market_usdt()} ₽\n"
+                f"└ BTC: {get_market_btc():,.0f} ₽\n"
+                f"└ ETH: {get_market_eth():,.0f} ₽",
+                parse_mode="Markdown"
+            )
+            return
+        
+        currency = parts[1].lower()
+        new_rate = float(parts[2])
+        
+        if new_rate <= 0:
+            await message.answer("❌ Курс должен быть положительным числом")
+            return
+        
+        if currency == 'usdt':
+            set_market_usdt(new_rate)
+            await message.answer(f"✅ *Курс USDT обновлён!*\n\nНовый курс: {new_rate:.2f} ₽", parse_mode="Markdown")
+        elif currency == 'btc':
+            set_market_btc(new_rate)
+            await message.answer(f"✅ *Курс BTC обновлён!*\n\nНовый курс: {new_rate:,.0f} ₽", parse_mode="Markdown")
+        elif currency == 'eth':
+            set_market_eth(new_rate)
+            await message.answer(f"✅ *Курс ETH обновлён!*\n\nНовый курс: {new_rate:,.0f} ₽", parse_mode="Markdown")
+        else:
+            await message.answer("❌ Доступные валюты: `usdt`, `btc`, `eth`", parse_mode="Markdown")
+        
+    except ValueError:
+        await message.answer("❌ Введи число. Пример: `/setrates usdt 92.50`", parse_mode="Markdown")
+
+# ========== КОМАНДА ДЛЯ ПРОВЕРКИ ТЕКУЩИХ КУРСОВ ==========
+@dp.message(Command("rates"))
+async def show_rates_admin(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ Доступ запрещен")
+        return
+    
+    await message.answer(
+        f"📊 *Текущие рыночные курсы:*\n\n"
+        f"└ USDT: {get_market_usdt():.2f} ₽\n"
+        f"└ BTC: {get_market_btc():,.0f} ₽\n"
+        f"└ ETH: {get_market_eth():,.0f} ₽",
+        parse_mode="Markdown"
+    )
+
 # ========== КОМАНДА ДЛЯ ИЗМЕНЕНИЯ ЛИМИТОВ ==========
 @dp.message(Command("setlimits"))
 async def set_limits(message: types.Message):
@@ -454,17 +533,16 @@ async def set_limits(message: types.Message):
         
         await message.answer(
             f"✅ *Лимиты обновлены!*\n\n"
-            f"📊 Новые лимиты: {new_min} - {new_max} ₽\n\n"
-            f"Теперь пользователи могут создавать заявки на сумму от {new_min} до {new_max} ₽",
+            f"📊 Новые лимиты: {new_min} - {new_max} ₽",
             parse_mode="Markdown"
         )
         
     except ValueError:
         await message.answer("❌ Введи числа. Пример: `/setlimits 1000 50000`", parse_mode="Markdown")
 
-# ========== КОМАНДА ДЛЯ ПРОВЕРКИ ТЕКУЩИХ ЛИМИТОВ ==========
+# ========== КОМАНДА ДЛЯ ПРОВЕРКИ ЛИМИТОВ ==========
 @dp.message(Command("limits"))
-async def show_limits(message: types.Message):
+async def show_limits_admin(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("⛔ Доступ запрещен")
         return
@@ -787,10 +865,8 @@ async def handle_amount(message: types.Message):
         coin = pending_orders[uid]["coin"]
         rates = pending_orders[uid]["rates"]
         
-        # Рассчитываем количество крипты
         crypto = calculate_crypto_amount(rub, coin, action, rates)
         
-        # Сохраняем заявку во временное хранилище с уникальным ID
         order_id = int(time.time() * 1000)
         pending_orders[order_id] = (action, coin, rub, crypto)
         del pending_orders[uid]
