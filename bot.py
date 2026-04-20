@@ -55,51 +55,75 @@ conn.commit()
 
 user_choice = {}
 
-# ========== ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ КУРСОВ (KuCoin + ЦБ РФ) ==========
-async def get_crypto_rates():
-    """
-    Получает курсы с KuCoin API (публичные эндпоинты, без ключей)
-    BTC/RUB и ETH/RUB: KuCoin (BTC/USDT, ETH/USDT) * курс USD/RUB от ЦБ РФ
-    USDT/RUB: курс USD/RUB от ЦБ РФ (USDT привязан к доллару)
-    """
-    try:
-        async with aiohttp.ClientSession() as session:
-            # 1. Получаем курс BTC/USDT с KuCoin
-            async with session.get("https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=BTC-USDT") as resp:
-                btc_data = await resp.json()
-                if btc_data.get('code') == '200000':
-                    btc_usdt = float(btc_data['data']['price'])
-                else:
-                    print(f"KuCoin BTC error: {btc_data}")
-                    return None, None, None
-            
-            # 2. Получаем курс ETH/USDT с KuCoin
-            async with session.get("https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=ETH-USDT") as resp:
-                eth_data = await resp.json()
-                if eth_data.get('code') == '200000':
-                    eth_usdt = float(eth_data['data']['price'])
-                else:
-                    print(f"KuCoin ETH error: {eth_data}")
-                    return None, None, None
-            
-            # 3. Получаем курс USD/RUB от ЦБ РФ (стабильный резерв)
-            async with session.get("https://www.cbr-xml-daily.ru/daily_json.js") as resp:
-                cbr_data = await resp.json()
-                usd_to_rub = float(cbr_data['Valute']['USD']['Value'])
-            
-            # 4. Рассчитываем курсы в рублях
-            btc_rub = btc_usdt * usd_to_rub
-            eth_rub = eth_usdt * usd_to_rub
-            usdt_rub = usd_to_rub
-            
-            print(f"DEBUG: KuCoin BTC={btc_usdt}, ETH={eth_usdt}, USD/RUB={usd_to_rub}")
-            
-            return usdt_rub, btc_rub, eth_rub
-            
-    except Exception as e:
-        print(f"КРИТИЧЕСКАЯ ОШИБКА KuCoin: {e}")
-        return None, None, None
+    if data == "rates":
+        # Показываем сообщение о загрузке
+        await call.message.answer(get_text(uid, 'loading_rates'), parse_mode="Markdown")
+        
+        # Получаем курсы
+        rates = await get_crypto_rates()
 
+        if rates is None:
+            await call.message.answer("❌ *Не удалось загрузить курсы. Попробуйте позже.*", parse_mode="Markdown")
+            await call.answer()
+            return
+
+        # Рыночные курсы
+        market_usdt = rates['market']['usdt']
+        market_btc = rates['market']['btc']
+        market_eth = rates['market']['eth']
+        
+        # Покупка (+10%)
+        buy_usdt = rates['buy']['usdt']
+        buy_btc = rates['buy']['btc']
+        buy_eth = rates['buy']['eth']
+        
+        # Продажа (-2%)
+        sell_usdt = rates['sell']['usdt']
+        sell_btc = rates['sell']['btc']
+        sell_eth = rates['sell']['eth']
+
+        if get_lang(uid) == 'ru':
+            text = (
+                f"📊 *Рыночные курсы:*\n"
+                f"└ USDT: {market_usdt:.2f} ₽\n"
+                f"└ BTC: {market_btc:,.0f} ₽\n"
+                f"└ ETH: {market_eth:,.0f} ₽\n\n"
+                
+                f"📈 *Покупка через MOSS PAY (+10%):*\n"
+                f"└ USDT: {buy_usdt:.2f} ₽\n"
+                f"└ BTC: {buy_btc:,.0f} ₽\n"
+                f"└ ETH: {buy_eth:,.0f} ₽\n\n"
+                
+                f"📉 *Продажа через MOSS PAY (-2%):*\n"
+                f"└ USDT: {sell_usdt:.2f} ₽\n"
+                f"└ BTC: {sell_btc:,.0f} ₽\n"
+                f"└ ETH: {sell_eth:,.0f} ₽\n\n"
+                
+                f"⚙️ *Комиссия MOSS PAY:* покупка +10%, продажа -2%"
+            )
+        else:
+            text = (
+                f"📊 *Market rates:*\n"
+                f"└ USDT: {market_usdt:.2f} RUB\n"
+                f"└ BTC: {market_btc:,.0f} RUB\n"
+                f"└ ETH: {market_eth:,.0f} RUB\n\n"
+                
+                f"📈 *Buy via MOSS PAY (+10%):*\n"
+                f"└ USDT: {buy_usdt:.2f} RUB\n"
+                f"└ BTC: {buy_btc:,.0f} RUB\n"
+                f"└ ETH: {buy_eth:,.0f} RUB\n\n"
+                
+                f"📉 *Sell via MOSS PAY (-2%):*\n"
+                f"└ USDT: {sell_usdt:.2f} RUB\n"
+                f"└ BTC: {sell_btc:,.0f} RUB\n"
+                f"└ ETH: {sell_eth:,.0f} RUB\n\n"
+                
+                f"⚙️ *MOSS PAY fee:* buy +10%, sell -2%"
+            )
+        
+        await call.message.answer(text, parse_mode="Markdown", reply_markup=main_menu(uid))
+        await call.answer()
+        return
 # ========== ТЕКСТЫ ==========
 TEXTS = {
     'ru': {
