@@ -11,6 +11,10 @@ import os
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 8177854087
 
+# Настройки лимитов (по умолчанию)
+MIN_LIMIT = 1000
+MAX_LIMIT = 50000
+
 app = Flask('')
 
 @app.route('/')
@@ -52,7 +56,34 @@ cur.execute('''
         language TEXT DEFAULT 'ru'
     )
 ''')
+cur.execute('''
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )
+''')
+# Сохраняем лимиты в базу при первом запуске
+cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('min_limit', ?)", (str(MIN_LIMIT),))
+cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('max_limit', ?)", (str(MAX_LIMIT),))
 conn.commit()
+
+def get_min_limit():
+    cur.execute("SELECT value FROM settings WHERE key = 'min_limit'")
+    row = cur.fetchone()
+    return int(row[0]) if row else MIN_LIMIT
+
+def get_max_limit():
+    cur.execute("SELECT value FROM settings WHERE key = 'max_limit'")
+    row = cur.fetchone()
+    return int(row[0]) if row else MAX_LIMIT
+
+def set_min_limit(value):
+    cur.execute("UPDATE settings SET value = ? WHERE key = 'min_limit'", (str(value),))
+    conn.commit()
+
+def set_max_limit(value):
+    cur.execute("UPDATE settings SET value = ? WHERE key = 'max_limit'", (str(value),))
+    conn.commit()
 
 # Временное хранилище для неподтверждённых заявок
 pending_orders = {}
@@ -179,10 +210,10 @@ TEXTS = {
         'help_btn': "❓ Помощь",
         'contacts_btn': "📞 Контакты",
         'back_btn': "🔙 Назад",
-        'select_buy': "💰 *Введи сумму в рублях для покупки {coin}:*\n📊 *Лимиты:* 1 000 - 50 000 ₽",
-        'select_sell': "💰 *Введи сумму в рублях для продажи {coin}:*\n📊 *Лимиты:* 1 000 - 50 000 ₽",
-        'limit_error': "❌ *Сумма должна быть от 1 000 до 50 000 ₽*",
-        'confirm_order': "💰 *Вы ввели:* {amount} ₽\n🪙 *Вы получите:* {crypto:.8f} {coin}\n📊 *Лимиты:* 1 000 - 50 000 ₽\n\n✅ *Подтвердить заявку?*",
+        'select_buy': "💰 *Введи сумму в рублях для покупки {coin}:*\n📊 *Лимиты:* {min} - {max} ₽",
+        'select_sell': "💰 *Введи сумму в рублях для продажи {coin}:*\n📊 *Лимиты:* {min} - {max} ₽",
+        'limit_error': "❌ *Сумма должна быть от {min} до {max} ₽*",
+        'confirm_order': "💰 *Вы ввели:* {amount} ₽\n🪙 *Вы получите:* {crypto:.8f} {coin}\n📊 *Лимиты:* {min} - {max} ₽\n\n✅ *Подтвердить заявку?*",
         'order_created': "✅ *Заявка #{id} создана!*\n\n📌 {type} {coin}\n💰 Сумма: {amount} ₽\n🪙 Крипта: {crypto:.8f} {coin}\n📊 Статус: 🟡 Ожидает обработки\n\n📞 *Оператор свяжется с вами*",
         'order_cancelled': "❌ *Заявка отменена*",
         'no_orders': "📭 *Нет заявок*",
@@ -232,10 +263,10 @@ TEXTS = {
         'help_btn': "❓ Help",
         'contacts_btn': "📞 Contacts",
         'back_btn': "🔙 Back",
-        'select_buy': "💰 *Enter amount in RUB to buy {coin}:*\n📊 *Limits:* 1,000 - 50,000 RUB",
-        'select_sell': "💰 *Enter amount in RUB to sell {coin}:*\n📊 *Limits:* 1,000 - 50,000 RUB",
-        'limit_error': "❌ *Amount must be between 1,000 and 50,000 RUB*",
-        'confirm_order': "💰 *You entered:* {amount} RUB\n🪙 *You will receive:* {crypto:.8f} {coin}\n📊 *Limits:* 1,000 - 50,000 RUB\n\n✅ *Confirm order?*",
+        'select_buy': "💰 *Enter amount in RUB to buy {coin}:*\n📊 *Limits:* {min} - {max} RUB",
+        'select_sell': "💰 *Enter amount in RUB to sell {coin}:*\n📊 *Limits:* {min} - {max} RUB",
+        'limit_error': "❌ *Amount must be between {min} and {max} RUB*",
+        'confirm_order': "💰 *You entered:* {amount} RUB\n🪙 *You will receive:* {crypto:.8f} {coin}\n📊 *Limits:* {min} - {max} RUB\n\n✅ *Confirm order?*",
         'order_created': "✅ *Order #{id} created!*\n\n📌 {type} {coin}\n💰 Amount: {amount} RUB\n🪙 Crypto: {crypto:.8f} {coin}\n📊 Status: 🟡 Pending\n\n📞 *Operator will contact you*",
         'order_cancelled': "❌ *Order cancelled*",
         'no_orders': "📭 *No orders*",
@@ -304,6 +335,8 @@ def main_menu(user_id):
     ])
 
 def buy_menu(user_id):
+    min_limit = get_min_limit()
+    max_limit = get_max_limit()
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💰 USDT", callback_data="buy_USDT")],
         [InlineKeyboardButton(text="₿ BTC", callback_data="buy_BTC")],
@@ -386,6 +419,62 @@ async def admin_panel(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
     await message.answer(get_text(ADMIN_ID, 'admin_panel'), parse_mode="Markdown", reply_markup=admin_menu())
+
+# ========== КОМАНДА ДЛЯ ИЗМЕНЕНИЯ ЛИМИТОВ ==========
+@dp.message(Command("setlimits"))
+async def set_limits(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ Доступ запрещен")
+        return
+    
+    try:
+        parts = message.text.split()
+        if len(parts) != 3:
+            await message.answer(
+                "❌ *Неверный формат*\n\n"
+                "Используй: `/setlimits 1000 50000`\n"
+                f"Текущие лимиты: {get_min_limit()} - {get_max_limit()} ₽",
+                parse_mode="Markdown"
+            )
+            return
+        
+        new_min = int(parts[1])
+        new_max = int(parts[2])
+        
+        if new_min <= 0 or new_max <= 0:
+            await message.answer("❌ Лимиты должны быть положительными числами")
+            return
+        
+        if new_min >= new_max:
+            await message.answer("❌ Минимальный лимит должен быть меньше максимального")
+            return
+        
+        set_min_limit(new_min)
+        set_max_limit(new_max)
+        
+        await message.answer(
+            f"✅ *Лимиты обновлены!*\n\n"
+            f"📊 Новые лимиты: {new_min} - {new_max} ₽\n\n"
+            f"Теперь пользователи могут создавать заявки на сумму от {new_min} до {new_max} ₽",
+            parse_mode="Markdown"
+        )
+        
+    except ValueError:
+        await message.answer("❌ Введи числа. Пример: `/setlimits 1000 50000`", parse_mode="Markdown")
+
+# ========== КОМАНДА ДЛЯ ПРОВЕРКИ ТЕКУЩИХ ЛИМИТОВ ==========
+@dp.message(Command("limits"))
+async def show_limits(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ Доступ запрещен")
+        return
+    
+    await message.answer(
+        f"📊 *Текущие лимиты:*\n\n"
+        f"💰 Минимальная сумма: {get_min_limit()} ₽\n"
+        f"💰 Максимальная сумма: {get_max_limit()} ₽",
+        parse_mode="Markdown"
+    )
 
 @dp.callback_query()
 async def handle_callback(call: types.CallbackQuery):
@@ -648,7 +737,12 @@ async def handle_callback(call: types.CallbackQuery):
             return
         
         pending_orders[uid] = {"action": "buy", "coin": coin, "rates": rates}
-        await call.message.answer(get_text(uid, 'select_buy', coin=coin), parse_mode="Markdown")
+        min_limit = get_min_limit()
+        max_limit = get_max_limit()
+        await call.message.answer(
+            get_text(uid, 'select_buy', coin=coin, min=min_limit, max=max_limit),
+            parse_mode="Markdown"
+        )
         await call.answer()
         return
     
@@ -662,7 +756,12 @@ async def handle_callback(call: types.CallbackQuery):
             return
         
         pending_orders[uid] = {"action": "sell", "coin": coin, "rates": rates}
-        await call.message.answer(get_text(uid, 'select_sell', coin=coin), parse_mode="Markdown")
+        min_limit = get_min_limit()
+        max_limit = get_max_limit()
+        await call.message.answer(
+            get_text(uid, 'select_sell', coin=coin, min=min_limit, max=max_limit),
+            parse_mode="Markdown"
+        )
         await call.answer()
         return
 
@@ -674,8 +773,14 @@ async def handle_amount(message: types.Message):
     
     try:
         rub = float(message.text.replace(",", ".").replace(" ", ""))
-        if rub < 1000 or rub > 50000:
-            await message.answer(get_text(uid, 'limit_error'), parse_mode="Markdown")
+        min_limit = get_min_limit()
+        max_limit = get_max_limit()
+        
+        if rub < min_limit or rub > max_limit:
+            await message.answer(
+                get_text(uid, 'limit_error', min=min_limit, max=max_limit),
+                parse_mode="Markdown"
+            )
             return
         
         action = pending_orders[uid]["action"]
@@ -691,13 +796,18 @@ async def handle_amount(message: types.Message):
         del pending_orders[uid]
         
         await message.answer(
-            get_text(uid, 'confirm_order', amount=f"{rub:,.0f}", crypto=crypto, coin=coin),
+            get_text(uid, 'confirm_order', amount=f"{rub:,.0f}", crypto=crypto, coin=coin, min=min_limit, max=max_limit),
             parse_mode="Markdown",
             reply_markup=confirm_menu(order_id)
         )
         
     except ValueError:
-        await message.answer(get_text(uid, 'limit_error'), parse_mode="Markdown")
+        min_limit = get_min_limit()
+        max_limit = get_max_limit()
+        await message.answer(
+            get_text(uid, 'limit_error', min=min_limit, max=max_limit),
+            parse_mode="Markdown"
+        )
 
 @dp.message(Command("orders"))
 async def user_orders(message: types.Message):
