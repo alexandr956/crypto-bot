@@ -1,6 +1,7 @@
 import asyncio
 import sqlite3
 import time
+import aiohttp
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -54,10 +55,60 @@ conn.commit()
 
 user_choice = {}
 
+# ========== ФУНКЦИИ ДЛЯ ПОЛУЧЕНИЯ КУРСОВ ==========
+async def get_usdt_rub():
+    """Получает курс USDT/RUB с Binance P2P (покупка)"""
+    try:
+        url = "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search"
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "page": 1,
+            "rows": 1,
+            "payTypes": [],
+            "asset": "USDT",
+            "tradeType": "BUY",  # Покупаем USDT за RUB
+            "fiat": "RUB",
+            "publisherType": None,
+            "merchantCheck": False,
+            "transAmount": 50000
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload) as resp:
+                data = await resp.json()
+                if data.get('code') == '000000' and data.get('data'):
+                    price = float(data['data'][0]['adv']['price'])
+                    return price
+                else:
+                    print(f"P2P API error: {data}")
+                    return None
+    except Exception as e:
+        print(f"Ошибка USDT/RUB: {e}")
+        return None
+
+async def get_crypto_usdt():
+    """Получает курсы BTC/USDT и ETH/USDT с Binance Spot"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            # BTC/USDT
+            async with session.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT") as resp:
+                btc_data = await resp.json()
+                btc_usdt = float(btc_data['price'])
+            
+            # ETH/USDT
+            async with session.get("https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT") as resp:
+                eth_data = await resp.json()
+                eth_usdt = float(eth_data['price'])
+            
+            return btc_usdt, eth_usdt
+    except Exception as e:
+        print(f"Ошибка BTC/ETH: {e}")
+        return None, None
+
 # ========== ТЕКСТЫ ==========
 TEXTS = {
     'ru': {
-        'welcome': "👋 *Привет, {name}!*\n\n🏦 *Добро пожаловать в MOSS PAY*\n\n💎 *Почему выбирают нас:*\n• 🚀 Мгновенные заявки\n• 🔒 Безопасные сделки\n• 💬 Поддержка 24/7\n• 💰 Лучшие курсы\n\n👇 *Выберите действие в меню ниже*",
+        'welcome': "👋 *Привет, {name}!*\n\n🏦 *Добро пожаловать в КриптоОбменник MOSS PAY*\n\n💎 *Почему выбирают нас:*\n• 🚀 Мгновенные заявки\n• 🔒 Безопасные сделки\n• 💬 Поддержка 24/7\n• 💰 Лучшие курсы\n\n👇 *Выберите действие в меню ниже*",
         'buy_btn': "🟢 Купить",
         'sell_btn': "🔴 Продать",
         'rates_btn': "📊 Курсы",
@@ -100,24 +151,10 @@ TEXTS = {
             "• Email: support@crypto-exchange.ru\n\n"
             "⏰ *Время ответа:* обычно в течение 5 минут"
         ),
-        'rates_text': (
-            "📊 *Рыночные курсы:*\n"
-            "└ USDT: 82,81 ₽\n"
-            "└ BTC: 5 725 873 ₽\n"
-            "└ ETH: 174 639 ₽\n\n"
-            "📈 *Покупка через MOSS PAY:*\n"
-            "└ USDT: 91,81 ₽ (+10%)\n"
-            "└ BTC: 6 298 873 ₽ (+10%)\n"
-            "└ ETH: 192 102 ₽ (+10%)\n\n"
-            "📉 *Продажа через MOSS PAY:*\n"
-            "└ USDT: 81,15 ₽ (-2%)\n"
-            "└ BTC: 5 611 355 ₽ (-2%)\n"
-            "└ ETH: 171 146 ₽ (-2%)\n\n"
-            "⚙️ *Наценка:* на покупку 10%, на продажу -2%"
-        ),
         'admin_panel': "🔧 *Панель администратора*\n\nВыберите действие:",
         'admin_orders_btn': "📋 Список заявок",
-        'admin_stats_btn': "📊 Статистика"
+        'admin_stats_btn': "📊 Статистика",
+        'loading_rates': "🔄 *Загружаю актуальные курсы с Binance...*"
     },
     'en': {
         'welcome': "👋 *Hi {name}!*\n\n🏦 *Welcome to MOSS PAY Crypto Exchanger*\n\n💎 *Why choose us:*\n• 🚀 Instant orders\n• 🔒 Secure transactions\n• 💬 24/7 support\n• 💰 Best rates\n\n👇 *Select an action below*",
@@ -163,24 +200,10 @@ TEXTS = {
             "• Email: support@crypto-exchange.ru\n\n"
             "⏰ *Response time:* usually within 5 minutes"
         ),
-        'rates_text': (
-            "📊 *Market rates:*\n"
-            "└ USDT: 82.81 RUB\n"
-            "└ BTC: 5,725,873 RUB\n"
-            "└ ETH: 174,639 RUB\n\n"
-            "📈 *Buy via MOSS PAY:*\n"
-            "└ USDT: 91.81 RUB (+10%)\n"
-            "└ BTC: 6,298,873 RUB (+10%)\n"
-            "└ ETH: 192,102 RUB (+10%)\n\n"
-            "📉 *Sell via MOSS PAY:*\n"
-            "└ USDT: 81.15 RUB (-2%)\n"
-            "└ BTC: 5,611,355 RUB (-2%)\n"
-            "└ ETH: 171,146 RUB (-2%)\n\n"
-            "⚙️ *Markup:* buy +10%, sell -2%"
-        ),
         'admin_panel': "🔧 *Admin panel*\n\nSelect action:",
         'admin_orders_btn': "📋 Orders list",
-        'admin_stats_btn': "📊 Statistics"
+        'admin_stats_btn': "📊 Statistics",
+        'loading_rates': "🔄 *Loading live rates from Binance...*"
     }
 }
 
@@ -259,11 +282,8 @@ async def start(message: types.Message):
     conn.commit()
     
     photo_url = "https://raw.githubusercontent.com/alexandr956/crypto-bot/main/welcome.jpg"
-    
-    # Получаем язык пользователя
     lang = get_lang(uid)
     
-    # Текст приветствия с именем
     if lang == 'ru':
         welcome_text = f"👋 *Привет, {message.from_user.first_name}!*\n\n🏦 *Добро пожаловать в КриптоОбменник MOSS PAY*\n\n💎 *Почему выбирают нас:*\n• 🚀 Мгновенные заявки\n• 🔒 Безопасные сделки\n• 💬 Поддержка 24/7\n• 💰 Лучшие курсы\n\n👇 *Выберите действие в меню ниже*"
     else:
@@ -320,7 +340,79 @@ async def handle_callback(call: types.CallbackQuery):
     
     # Курсы
     if data == "rates":
-        await call.message.answer(get_text(uid, 'rates_text'), parse_mode="Markdown", reply_markup=main_menu(uid))
+        # Показываем сообщение о загрузке
+        await call.message.answer(get_text(uid, 'loading_rates'), parse_mode="Markdown")
+        
+        # Получаем курс USDT/RUB с P2P
+        usdt_rub = await get_usdt_rub()
+        if usdt_rub is None:
+            await call.message.answer("❌ *Не удалось загрузить курс USDT/RUB с Binance P2P. Попробуйте позже.*", parse_mode="Markdown")
+            await call.answer()
+            return
+        
+        # Получаем курсы BTC/USDT и ETH/USDT
+        btc_usdt, eth_usdt = await get_crypto_usdt()
+        if btc_usdt is None or eth_usdt is None:
+            await call.message.answer("❌ *Не удалось загрузить курсы BTC/ETH с Binance. Попробуйте позже.*", parse_mode="Markdown")
+            await call.answer()
+            return
+        
+        # Рассчитываем рубли
+        btc_rub = btc_usdt * usdt_rub
+        eth_rub = eth_usdt * usdt_rub
+        
+        # Рассчитываем покупку (+10%)
+        btc_buy = btc_rub * 1.10
+        eth_buy = eth_rub * 1.10
+        usdt_buy = usdt_rub * 1.10
+        
+        # Рассчитываем продажу (-2%)
+        btc_sell = btc_rub * 0.98
+        eth_sell = eth_rub * 0.98
+        usdt_sell = usdt_rub * 0.98
+        
+        if get_lang(uid) == 'ru':
+            text = (
+                f"📊 *Рыночные курсы (Binance):*\n"
+                f"└ USDT: {usdt_rub:.2f} ₽\n"
+                f"└ BTC: {btc_rub:,.0f} ₽\n"
+                f"└ ETH: {eth_rub:,.0f} ₽\n\n"
+                
+                f"📈 *Покупка через MOSS PAY (+10%):*\n"
+                f"└ USDT: {usdt_buy:.2f} ₽\n"
+                f"└ BTC: {btc_buy:,.0f} ₽\n"
+                f"└ ETH: {eth_buy:,.0f} ₽\n\n"
+                
+                f"📉 *Продажа через MOSS PAY (-2%):*\n"
+                f"└ USDT: {usdt_sell:.2f} ₽\n"
+                f"└ BTC: {btc_sell:,.0f} ₽\n"
+                f"└ ETH: {eth_sell:,.0f} ₽\n\n"
+                
+                f"⚙️ *Комиссия MOSS PAY:* покупка +10%, продажа -2%\n"
+                f"🔄 *Курсы обновляются автоматически с Binance*"
+            )
+        else:
+            text = (
+                f"📊 *Market rates (Binance):*\n"
+                f"└ USDT: {usdt_rub:.2f} RUB\n"
+                f"└ BTC: {btc_rub:,.0f} RUB\n"
+                f"└ ETH: {eth_rub:,.0f} RUB\n\n"
+                
+                f"📈 *Buy via MOSS PAY (+10%):*\n"
+                f"└ USDT: {usdt_buy:.2f} RUB\n"
+                f"└ BTC: {btc_buy:,.0f} RUB\n"
+                f"└ ETH: {eth_buy:,.0f} RUB\n\n"
+                
+                f"📉 *Sell via MOSS PAY (-2%):*\n"
+                f"└ USDT: {usdt_sell:.2f} RUB\n"
+                f"└ BTC: {btc_sell:,.0f} RUB\n"
+                f"└ ETH: {eth_sell:,.0f} RUB\n\n"
+                
+                f"⚙️ *MOSS PAY fee:* buy +10%, sell -2%\n"
+                f"🔄 *Rates updated automatically from Binance*"
+            )
+        
+        await call.message.answer(text, parse_mode="Markdown", reply_markup=main_menu(uid))
         await call.answer()
         return
     
@@ -387,7 +479,6 @@ async def handle_callback(call: types.CallbackQuery):
             cur.execute('UPDATE orders SET status = "accepted" WHERE id = ?', (order_id,))
             conn.commit()
             
-            # Уведомляем пользователя
             user_lang = get_lang(user_id)
             if user_lang == 'ru':
                 await bot.send_message(user_id, f"✅ *Ваша заявка #{order_id} принята!*\n\nОператор скоро свяжется с вами.", parse_mode="Markdown")
@@ -410,7 +501,6 @@ async def handle_callback(call: types.CallbackQuery):
             cur.execute('UPDATE orders SET status = "rejected" WHERE id = ?', (order_id,))
             conn.commit()
             
-            # Уведомляем пользователя
             user_lang = get_lang(user_id)
             if user_lang == 'ru':
                 await bot.send_message(user_id, f"❌ *Ваша заявка #{order_id} отклонена!*\n\nВы можете создать новую заявку.", parse_mode="Markdown")
@@ -465,7 +555,6 @@ async def handle_amount(message: types.Message):
             reply_markup=main_menu(uid)
         )
         
-        # Уведомление админу с кнопками
         username = f"@{message.from_user.username}" if message.from_user.username else "no username"
         await bot.send_message(
             ADMIN_ID,
