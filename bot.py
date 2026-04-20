@@ -68,6 +68,8 @@ TEXTS = {
         'select_sell': "💰 *Введи сумму в рублях для продажи {coin}:*\n📊 *Лимиты:* 1 000 - 50 000 ₽",
         'limit_error': "❌ *Сумма должна быть от 1 000 до 50 000 ₽*",
         'order_created': "✅ *Заявка #{id} создана!*\n\n{type} {coin} на {amount} ₽\n\n📞 *Оператор свяжется с вами*",
+        'order_accepted': "✅ *Заявка #{id} принята!*\n\nОператор скоро свяжется с вами для уточнения деталей.",
+        'order_rejected': "❌ *Заявка #{id} отклонена!*\n\nК сожалению, оператор не может провести эту сделку.\nВы можете создать новую заявку.",
         'no_orders': "📭 *Нет новых заявок*",
         'orders_title': "📋 *Новые заявки:*\n\n",
         'type_buy': "Покупка",
@@ -112,7 +114,10 @@ TEXTS = {
             "└ BTC: 5 611 355 ₽ (-2%)\n"
             "└ ETH: 171 146 ₽ (-2%)\n\n"
             "⚙️ *Наценка:* на покупку 10%, на продажу -2%"
-        )
+        ),
+        'admin_panel': "🔧 *Панель администратора*\n\nВыберите действие:",
+        'admin_orders_btn': "📋 Список заявок",
+        'admin_stats_btn': "📊 Статистика"
     },
     'en': {
         'welcome': "🏦 *Welcome to Crypto Exchanger!*",
@@ -126,6 +131,8 @@ TEXTS = {
         'select_sell': "💰 *Enter amount in RUB to sell {coin}:*\n📊 *Limits:* 1,000 - 50,000 RUB",
         'limit_error': "❌ *Amount must be between 1,000 and 50,000 RUB*",
         'order_created': "✅ *Order #{id} created!*\n\n{type} {coin} for {amount} RUB\n\n📞 *Operator will contact you*",
+        'order_accepted': "✅ *Order #{id} accepted!*\n\nOperator will contact you shortly to discuss details.",
+        'order_rejected': "❌ *Order #{id} rejected!*\n\nUnfortunately, the operator cannot process this transaction.\nYou can create a new order.",
         'no_orders': "📭 *No new orders*",
         'orders_title': "📋 *New orders:*\n\n",
         'type_buy': "Purchase",
@@ -170,7 +177,10 @@ TEXTS = {
             "└ BTC: 5,611,355 RUB (-2%)\n"
             "└ ETH: 171,146 RUB (-2%)\n\n"
             "⚙️ *Markup:* buy +10%, sell -2%"
-        )
+        ),
+        'admin_panel': "🔧 *Admin panel*\n\nSelect action:",
+        'admin_orders_btn': "📋 Orders list",
+        'admin_stats_btn': "📊 Statistics"
     }
 }
 
@@ -229,6 +239,19 @@ def contacts_menu(user_id):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="main")]
     ])
 
+def admin_menu():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 Список заявок", callback_data="admin_orders")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="main")]
+    ])
+
+def order_buttons(order_id):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Принять", callback_data=f"accept_{order_id}"),
+         InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{order_id}")]
+    ])
+
 @dp.message(Command("start"))
 async def start(message: types.Message):
     uid = message.from_user.id
@@ -240,6 +263,12 @@ async def start(message: types.Message):
         await message.answer_photo(photo_url, caption=get_text(uid, 'welcome'), parse_mode="Markdown", reply_markup=main_menu(uid))
     except:
         await message.answer(get_text(uid, 'welcome'), parse_mode="Markdown", reply_markup=main_menu(uid))
+
+@dp.message(Command("admin"))
+async def admin_panel(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    await message.answer(get_text(ADMIN_ID, 'admin_panel'), parse_mode="Markdown", reply_markup=admin_menu())
 
 @dp.callback_query()
 async def handle_callback(call: types.CallbackQuery):
@@ -297,6 +326,91 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
+    # Админ панель
+    if data == "admin_orders":
+        if uid != ADMIN_ID:
+            await call.answer("Доступ запрещен", show_alert=True)
+            return
+        cur.execute('SELECT id, type, coin, amount, status FROM orders WHERE status = "new" ORDER BY created_at DESC')
+        orders = cur.fetchall()
+        if not orders:
+            await call.message.answer(get_text(ADMIN_ID, 'no_orders'), parse_mode="Markdown")
+        else:
+            for order in orders:
+                order_id, o_type, coin, amount, status = order
+                type_text = "Покупка" if o_type == "buy" else "Продажа"
+                text = f"📋 *Заявка #{order_id}*\n\n{type_text} {coin}\n💰 {amount:,.0f} ₽\nСтатус: {status}"
+                await call.message.answer(text, parse_mode="Markdown", reply_markup=order_buttons(order_id))
+        await call.answer()
+        return
+    
+    if data == "admin_stats":
+        if uid != ADMIN_ID:
+            await call.answer("Доступ запрещен", show_alert=True)
+            return
+        cur.execute('SELECT COUNT(*), SUM(amount) FROM orders WHERE status = "new"')
+        new_orders, new_sum = cur.fetchone()
+        cur.execute('SELECT COUNT(*), SUM(amount) FROM orders')
+        total_orders, total_sum = cur.fetchone()
+        
+        text = (
+            "📊 *Статистика:*\n\n"
+            f"🆕 Новых заявок: {new_orders or 0}\n"
+            f"💰 Сумма новых: {new_sum or 0:,.0f} ₽\n\n"
+            f"📦 Всего заявок: {total_orders or 0}\n"
+            f"💵 Общая сумма: {total_sum or 0:,.0f} ₽"
+        )
+        await call.message.answer(text, parse_mode="Markdown", reply_markup=admin_menu())
+        await call.answer()
+        return
+    
+    # Обработка принятия/отклонения заявки
+    if data.startswith("accept_"):
+        if uid != ADMIN_ID:
+            await call.answer("Доступ запрещен", show_alert=True)
+            return
+        order_id = int(data.split("_")[1])
+        cur.execute('SELECT user_id, type, coin, amount FROM orders WHERE id = ?', (order_id,))
+        order = cur.fetchone()
+        if order:
+            user_id, o_type, coin, amount = order
+            cur.execute('UPDATE orders SET status = "accepted" WHERE id = ?', (order_id,))
+            conn.commit()
+            
+            # Уведомляем пользователя
+            user_lang = get_lang(user_id)
+            if user_lang == 'ru':
+                await bot.send_message(user_id, f"✅ *Ваша заявка #{order_id} принята!*\n\nОператор скоро свяжется с вами.", parse_mode="Markdown")
+            else:
+                await bot.send_message(user_id, f"✅ *Your order #{order_id} has been accepted!*\n\nOperator will contact you shortly.", parse_mode="Markdown")
+            
+            await call.message.edit_text(f"✅ Заявка #{order_id} принята!", reply_markup=None)
+        await call.answer()
+        return
+    
+    if data.startswith("reject_"):
+        if uid != ADMIN_ID:
+            await call.answer("Доступ запрещен", show_alert=True)
+            return
+        order_id = int(data.split("_")[1])
+        cur.execute('SELECT user_id, type, coin, amount FROM orders WHERE id = ?', (order_id,))
+        order = cur.fetchone()
+        if order:
+            user_id, o_type, coin, amount = order
+            cur.execute('UPDATE orders SET status = "rejected" WHERE id = ?', (order_id,))
+            conn.commit()
+            
+            # Уведомляем пользователя
+            user_lang = get_lang(user_id)
+            if user_lang == 'ru':
+                await bot.send_message(user_id, f"❌ *Ваша заявка #{order_id} отклонена!*\n\nВы можете создать новую заявку.", parse_mode="Markdown")
+            else:
+                await bot.send_message(user_id, f"❌ *Your order #{order_id} has been rejected!*\n\nYou can create a new order.", parse_mode="Markdown")
+            
+            await call.message.edit_text(f"❌ Заявка #{order_id} отклонена!", reply_markup=None)
+        await call.answer()
+        return
+    
     # Выбор валюты для покупки
     if data.startswith("buy_"):
         coin = data.split("_")[1]
@@ -341,16 +455,19 @@ async def handle_amount(message: types.Message):
             reply_markup=main_menu(uid)
         )
         
+        # Уведомление админу с кнопками
         username = f"@{message.from_user.username}" if message.from_user.username else "no username"
+        admin_lang = get_lang(ADMIN_ID)
         await bot.send_message(
             ADMIN_ID,
-            f"🆕 *NEW ORDER #{order_id}*\n\n"
+            f"🆕 *НОВАЯ ЗАЯВКА #{order_id}*\n\n"
             f"📌 {type_text} {coin}\n"
-            f"💰 Amount: {rub:,.0f} RUB\n"
-            f"👤 User: {message.from_user.full_name}\n"
+            f"💰 Сумма: {rub:,.0f} ₽\n"
+            f"👤 Пользователь: {message.from_user.full_name}\n"
             f"{username}\n"
             f"🆔 ID: {uid}",
-            parse_mode="Markdown"
+            parse_mode="Markdown",
+            reply_markup=order_buttons(order_id)
         )
         
         del user_choice[uid]
@@ -370,11 +487,11 @@ async def admin_orders(message: types.Message):
         await message.answer(get_text(ADMIN_ID, 'no_orders'), parse_mode="Markdown")
         return
     
-    text = get_text(ADMIN_ID, 'orders_title')
     for order in orders:
-        text += f"#{order[0]} | {order[1]} {order[2]} | {order[3]:,.0f} ₽ | {order[4]}\n"
-    
-    await message.answer(text, parse_mode="Markdown")
+        order_id, o_type, coin, amount, status = order
+        type_text = "Покупка" if o_type == "buy" else "Продажа"
+        text = f"📋 *Заявка #{order_id}*\n\n{type_text} {coin}\n💰 {amount:,.0f} ₽\nСтатус: {status}"
+        await message.answer(text, parse_mode="Markdown", reply_markup=order_buttons(order_id))
 
 async def main():
     print("✅ Бот запущен")
