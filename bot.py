@@ -57,7 +57,7 @@ user_choice = {}
 # ========== ТЕКСТЫ ==========
 TEXTS = {
     'ru': {
-        'welcome': "🏦 *Добро пожаловать в КриптоОбменник!*",
+        'welcome': "👋 *Привет, {name}!*\n\n🏦 *Добро пожаловать в КриптоОбменник MOSS PAY*\n\n💎 *Почему выбирают нас:*\n• 🚀 Мгновенные заявки\n• 🔒 Безопасные сделки\n• 💬 Поддержка 24/7\n• 💰 Лучшие курсы\n\n👇 *Выберите действие в меню ниже*",
         'buy_btn': "🟢 Купить",
         'sell_btn': "🔴 Продать",
         'rates_btn': "📊 Курсы",
@@ -120,7 +120,7 @@ TEXTS = {
         'admin_stats_btn': "📊 Статистика"
     },
     'en': {
-        'welcome': "🏦 *Welcome to Crypto Exchanger!*",
+        'welcome': "👋 *Hi {name}!*\n\n🏦 *Welcome to MOSS PAY Crypto Exchanger*\n\n💎 *Why choose us:*\n• 🚀 Instant orders\n• 🔒 Secure transactions\n• 💬 24/7 support\n• 💰 Best rates\n\n👇 *Select an action below*",
         'buy_btn': "🟢 Buy",
         'sell_btn': "🔴 Sell",
         'rates_btn': "📊 Rates",
@@ -259,10 +259,20 @@ async def start(message: types.Message):
     conn.commit()
     
     photo_url = "https://raw.githubusercontent.com/alexandr956/crypto-bot/main/welcome.jpg"
+    
+    # Получаем язык пользователя
+    lang = get_lang(uid)
+    
+    # Текст приветствия с именем
+    if lang == 'ru':
+        welcome_text = f"👋 *Привет, {message.from_user.first_name}!*\n\n🏦 *Добро пожаловать в КриптоОбменник MOSS PAY*\n\n💎 *Почему выбирают нас:*\n• 🚀 Мгновенные заявки\n• 🔒 Безопасные сделки\n• 💬 Поддержка 24/7\n• 💰 Лучшие курсы\n\n👇 *Выберите действие в меню ниже*"
+    else:
+        welcome_text = f"👋 *Hi {message.from_user.first_name}!*\n\n🏦 *Welcome to MOSS PAY Crypto Exchanger*\n\n💎 *Why choose us:*\n• 🚀 Instant orders\n• 🔒 Secure transactions\n• 💬 24/7 support\n• 💰 Best rates\n\n👇 *Select an action below*"
+    
     try:
-        await message.answer_photo(photo_url, caption=get_text(uid, 'welcome'), parse_mode="Markdown", reply_markup=main_menu(uid))
+        await message.answer_photo(photo_url, caption=welcome_text, parse_mode="Markdown", reply_markup=main_menu(uid))
     except:
-        await message.answer(get_text(uid, 'welcome'), parse_mode="Markdown", reply_markup=main_menu(uid))
+        await message.answer(welcome_text, parse_mode="Markdown", reply_markup=main_menu(uid))
 
 @dp.message(Command("admin"))
 async def admin_panel(message: types.Message):
@@ -457,7 +467,6 @@ async def handle_amount(message: types.Message):
         
         # Уведомление админу с кнопками
         username = f"@{message.from_user.username}" if message.from_user.username else "no username"
-        admin_lang = get_lang(ADMIN_ID)
         await bot.send_message(
             ADMIN_ID,
             f"🆕 *НОВАЯ ЗАЯВКА #{order_id}*\n\n"
