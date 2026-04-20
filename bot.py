@@ -47,11 +47,22 @@ async def test_callback(call: types.CallbackQuery):
 @dp.callback_query(lambda c: c.data == "rates")
 async def rates_callback(call: types.CallbackQuery):
     text = (
-        "📊 *Актуальные курсы:*\n\n"
-        "└ *USDT:* 82,81 ₽\n"
-        "└ *BTC:* 5 725 873 ₽\n"
-        "└ *ETH:* 174 639 ₽\n\n"
-        "📞 *Точный курс уточняйте у оператора*"
+        "📊 *Рыночные курсы:*\n"
+        "└ USDT: 82,81 ₽\n"
+        "└ BTC: 5 725 873 ₽\n"
+        "└ ETH: 174 639 ₽\n\n"
+        
+        "📈 *Покупка через MOSS PAY:*\n"
+        "└ USDT: 91,81 ₽ (+10%)\n"
+        "└ BTC: 6 298 873 ₽ (+10%)\n"
+        "└ ETH: 192 102 ₽ (+10%)\n\n"
+        
+        "📉 *Продажа через MOSS PAY:*\n"
+        "└ USDT: 81,15 ₽ (-2%)\n"
+        "└ BTC: 5 611 355 ₽ (-2%)\n"
+        "└ ETH: 171 146 ₽ (-2%)\n\n"
+        
+        "⚙️ *Наценка:* на покупку 10%, на продажу -2%"
     )
     await call.message.answer(text, parse_mode="Markdown", reply_markup=main_menu())
     await call.answer()
