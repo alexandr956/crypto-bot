@@ -65,7 +65,6 @@ cur.execute('''
         value TEXT
     )
 ''')
-# Сохраняем настройки при первом запуске
 cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('min_limit', ?)", (str(DEFAULT_MIN_LIMIT),))
 cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('max_limit', ?)", (str(DEFAULT_MAX_LIMIT),))
 cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('market_usdt', ?)", (str(DEFAULT_MARKET_USDT),))
@@ -117,23 +116,17 @@ def set_min_limit(value):
 def set_max_limit(value):
     set_setting('max_limit', value)
 
-# Временное хранилище для неподтверждённых заявок
 pending_orders = {}
 
 # ========== ФУНКЦИЯ ДЛЯ КУРСОВ ==========
 async def get_crypto_rates():
-    """
-    Получает рыночные курсы из базы данных
-    """
     market_usdt = get_market_usdt()
     market_btc = get_market_btc()
     market_eth = get_market_eth()
     
-    # Комиссия MOSS PAY (покупка +10%, продажа -2%)
-    commission_buy = 1.10    # +10%
-    commission_sell = 0.98   # -2%
+    commission_buy = 1.10
+    commission_sell = 0.98
     
-    # Рассчитываем курсы с комиссией
     buy_usdt = market_usdt * commission_buy
     buy_btc = market_btc * commission_buy
     buy_eth = market_eth * commission_buy
@@ -148,7 +141,6 @@ async def get_crypto_rates():
         'sell': {'usdt': sell_usdt, 'btc': sell_btc, 'eth': sell_eth}
     }
 
-# ========== ФУНКЦИЯ ДЛЯ РАСЧЁТА КРИПТЫ ==========
 def calculate_crypto_amount(rub, coin, action, rates):
     if action == 'buy':
         if coin == 'BTC':
@@ -176,7 +168,6 @@ def calculate_crypto_amount(rub, coin, action, rates):
             crypto = rub
     return crypto
 
-# ========== ФУНКЦИЯ ДЛЯ ОБНОВЛЕНИЯ СТАТУСА ==========
 async def update_order_status(order_id, new_status):
     cur.execute('SELECT user_id, type, coin, amount, crypto_amount FROM orders WHERE id = ?', (order_id,))
     order = cur.fetchone()
@@ -189,11 +180,11 @@ async def update_order_status(order_id, new_status):
     conn.commit()
     
     status_display = {
-        'pending': '🟡 Ожидает обработки',
-        'processing': '🔵 В обработке',
-        'completed': '🟢 Выполнена',
-        'rejected': '🔴 Отклонена',
-        'cancelled': '⚫ Отменена'
+        'pending': 'Ожидает обработки',
+        'processing': 'В обработке',
+        'completed': 'Выполнена',
+        'rejected': 'Отклонена',
+        'cancelled': 'Отменена'
     }
     
     status_text = status_display.get(new_status, new_status)
@@ -203,129 +194,81 @@ async def update_order_status(order_id, new_status):
     if user_lang == 'ru':
         await bot.send_message(
             user_id_db,
-            f"✅ *Статус заявки #{order_id} обновлён*\n\n"
+            f"✅ Статус заявки #{order_id} обновлён\n\n"
             f"📌 {type_text} {coin}\n"
             f"💰 Сумма: {amount:,.0f} ₽\n"
             f"🪙 Крипта: {crypto:.8f} {coin}\n"
-            f"📊 *Новый статус:* {status_text}",
-            parse_mode="Markdown"
+            f"📊 Новый статус: {status_text}"
         )
     else:
         await bot.send_message(
             user_id_db,
-            f"✅ *Order #{order_id} status updated*\n\n"
+            f"✅ Order #{order_id} status updated\n\n"
             f"📌 {type_text} {coin}\n"
             f"💰 Amount: {amount:,.0f} RUB\n"
             f"🪙 Crypto: {crypto:.8f} {coin}\n"
-            f"📊 *New status:* {status_text}",
-            parse_mode="Markdown"
+            f"📊 New status: {status_text}"
         )
 
 # ========== ТЕКСТЫ ==========
 TEXTS = {
     'ru': {
-        'welcome': "👋 *Привет, {name}!*\n\n🏦 *Добро пожаловать в КриптоОбменник MOSS PAY*\n\n💎 *Почему выбирают нас:*\n• 🚀 Мгновенные заявки\n• 🔒 Безопасные сделки\n• 💬 Поддержка 24/7\n• 💰 Лучшие курсы\n\n👇 *Выберите действие в меню ниже*",
+        'welcome': f"👋 Привет!\n\n🏦 Добро пожаловать в КриптоОбменник MOSS PAY\n\n💎 Почему выбирают нас:\n• 🚀 Мгновенные заявки\n• 🔒 Безопасные сделки\n• 💬 Поддержка 24/7\n• 💰 Лучшие курсы\n\n👇 Выберите действие в меню ниже",
         'buy_btn': "🟢 Купить",
         'sell_btn': "🔴 Продать",
         'rates_btn': "📊 Курсы",
         'help_btn': "❓ Помощь",
         'contacts_btn': "📞 Контакты",
         'back_btn': "🔙 Назад",
-        'select_buy': "💰 *Введи сумму в рублях для покупки {coin}:*\n📊 *Лимиты:* {min} - {max} ₽",
-        'select_sell': "💰 *Введи сумму в рублях для продажи {coin}:*\n📊 *Лимиты:* {min} - {max} ₽",
-        'limit_error': "❌ *Сумма должна быть от {min} до {max} ₽*",
-        'confirm_order': "💰 *Вы ввели:* {amount} ₽\n🪙 *Вы получите:* {crypto:.8f} {coin}\n📊 *Лимиты:* {min} - {max} ₽\n\n✅ *Подтвердить заявку?*",
-        'order_created': "✅ *Заявка #{id} создана!*\n\n📌 {type} {coin}\n💰 Сумма: {amount} ₽\n🪙 Крипта: {crypto:.8f} {coin}\n📊 Статус: 🟡 Ожидает обработки\n\n📞 *Оператор свяжется с вами*",
-        'order_cancelled': "❌ *Заявка отменена*",
-        'no_orders': "📭 *Нет заявок*",
-        'orders_title': "📋 *Ваши заявки:*\n\n",
+        'select_buy': "💰 Введи сумму в рублях для покупки {coin}:\n📊 Лимиты: {min} - {max} ₽",
+        'select_sell': "💰 Введи сумму в рублях для продажи {coin}:\n📊 Лимиты: {min} - {max} ₽",
+        'limit_error': "❌ Сумма должна быть от {min} до {max} ₽",
+        'confirm_order': "💰 Вы ввели: {amount} ₽\n🪙 Вы получите: {crypto:.8f} {coin}\n📊 Лимиты: {min} - {max} ₽\n\n✅ Подтвердить заявку?",
+        'order_created': "✅ Заявка #{id} создана!\n\n📌 {type} {coin}\n💰 Сумма: {amount} ₽\n🪙 Крипта: {crypto:.8f} {coin}\n📊 Статус: Ожидает обработки\n\n📞 Оператор свяжется с вами",
+        'order_cancelled': "❌ Заявка отменена",
+        'no_orders': "📭 Нет заявок",
+        'orders_title': "📋 Ваши заявки:\n\n",
         'type_buy': "Покупка",
         'type_sell': "Продажа",
         'change_lang': "🌐 Сменить язык",
         'lang_selected': "✅ Язык: Русский",
-        'select_lang': "🌐 *Выбери язык:*",
-        'help_text': (
-            "❓ *Как пользоваться обменником:*\n\n"
-            "1️⃣ *Купить криптовалюту*\n"
-            "   • Выбери валюту (USDT, BTC, ETH, RapiraRUB)\n"
-            "   • Введи сумму в рублях (от 1000 до 50000)\n"
-            "   • Подтверди заявку\n"
-            "   • Оператор свяжется с тобой\n\n"
-            "2️⃣ *Продать криптовалюту*\n"
-            "   • Выбери валюту\n"
-            "   • Введи сумму в рублях\n"
-            "   • Подтверди заявку\n"
-            "   • Оператор свяжется с тобой\n\n"
-            "3️⃣ *Курсы*\n"
-            "   • Актуальные курсы с наценкой 10% (покупка) и -2% (продажа)\n\n"
-            "4️⃣ *Контакты*\n"
-            "   • Связь с оператором: кнопка ниже\n\n"
-            "⏰ *Время работы:* 10:00 – 22:00 МСК"
-        ),
-        'contacts_text': (
-            "📞 *Связь с оператором:*\n\n"
-            "• Telegram: @shakakobmen\n"
-            "• WhatsApp: +7 999 123-45-67\n"
-            "• Email: support@crypto-exchange.ru\n\n"
-            "⏰ *Время ответа:* обычно в течение 5 минут"
-        ),
-        'admin_panel': "🔧 *Панель администратора*\n\nВыберите действие:",
+        'select_lang': "🌐 Выбери язык:",
+        'help_text': "❓ Как пользоваться обменником:\n\n1️⃣ Купить криптовалюту\n   • Выбери валюту\n   • Введи сумму\n   • Подтверди заявку\n\n2️⃣ Продать криптовалюту\n   • Выбери валюту\n   • Введи сумму\n   • Подтверди заявку\n\n3️⃣ Курсы\n   • Актуальные курсы с наценкой 10% (покупка) и -2% (продажа)\n\n4️⃣ Контакты\n   • Связь с оператором: кнопка ниже\n\n⏰ Время работы: 10:00 – 22:00 МСК",
+        'contacts_text': "📞 Связь с оператором:\n\n• Telegram: @shakakobmen\n• WhatsApp: +7 999 123-45-67\n• Email: support@crypto-exchange.ru\n\n⏰ Время ответа: обычно в течение 5 минут",
+        'admin_panel': "🔧 Панель администратора\n\nВыберите действие:",
         'admin_orders_btn': "📋 Список заявок",
         'admin_stats_btn': "📊 Статистика",
-        'loading_rates': "🔄 *Загружаю актуальные курсы...*",
+        'loading_rates': "🔄 Загружаю актуальные курсы...",
         'confirm_yes': "✅ Да, подтверждаю",
         'confirm_no': "❌ Нет, отменить"
     },
     'en': {
-        'welcome': "👋 *Hi {name}!*\n\n🏦 *Welcome to MOSS PAY Crypto Exchanger*\n\n💎 *Why choose us:*\n• 🚀 Instant orders\n• 🔒 Secure transactions\n• 💬 24/7 support\n• 💰 Best rates\n\n👇 *Select an action below*",
+        'welcome': f"👋 Hi!\n\n🏦 Welcome to MOSS PAY Crypto Exchanger\n\n💎 Why choose us:\n• 🚀 Instant orders\n• 🔒 Secure transactions\n• 💬 24/7 support\n• 💰 Best rates\n\n👇 Select an action below",
         'buy_btn': "🟢 Buy",
         'sell_btn': "🔴 Sell",
         'rates_btn': "📊 Rates",
         'help_btn': "❓ Help",
         'contacts_btn': "📞 Contacts",
         'back_btn': "🔙 Back",
-        'select_buy': "💰 *Enter amount in RUB to buy {coin}:*\n📊 *Limits:* {min} - {max} RUB",
-        'select_sell': "💰 *Enter amount in RUB to sell {coin}:*\n📊 *Limits:* {min} - {max} RUB",
-        'limit_error': "❌ *Amount must be between {min} and {max} RUB*",
-        'confirm_order': "💰 *You entered:* {amount} RUB\n🪙 *You will receive:* {crypto:.8f} {coin}\n📊 *Limits:* {min} - {max} RUB\n\n✅ *Confirm order?*",
-        'order_created': "✅ *Order #{id} created!*\n\n📌 {type} {coin}\n💰 Amount: {amount} RUB\n🪙 Crypto: {crypto:.8f} {coin}\n📊 Status: 🟡 Pending\n\n📞 *Operator will contact you*",
-        'order_cancelled': "❌ *Order cancelled*",
-        'no_orders': "📭 *No orders*",
-        'orders_title': "📋 *Your orders:*\n\n",
+        'select_buy': "💰 Enter amount in RUB to buy {coin}:\n📊 Limits: {min} - {max} RUB",
+        'select_sell': "💰 Enter amount in RUB to sell {coin}:\n📊 Limits: {min} - {max} RUB",
+        'limit_error': "❌ Amount must be between {min} and {max} RUB",
+        'confirm_order': "💰 You entered: {amount} RUB\n🪙 You will receive: {crypto:.8f} {coin}\n📊 Limits: {min} - {max} RUB\n\n✅ Confirm order?",
+        'order_created': "✅ Order #{id} created!\n\n📌 {type} {coin}\n💰 Amount: {amount} RUB\n🪙 Crypto: {crypto:.8f} {coin}\n📊 Status: Pending\n\n📞 Operator will contact you",
+        'order_cancelled': "❌ Order cancelled",
+        'no_orders': "📭 No orders",
+        'orders_title': "📋 Your orders:\n\n",
         'type_buy': "Purchase",
         'type_sell': "Sale",
         'change_lang': "🌐 Change language",
         'lang_selected': "✅ Language: English",
-        'select_lang': "🌐 *Choose language:*",
-        'help_text': (
-            "❓ *How to use the exchanger:*\n\n"
-            "1️⃣ *Buy crypto*\n"
-            "   • Choose currency (USDT, BTC, ETH, RapiraRUB)\n"
-            "   • Enter amount in RUB (1000 - 50000)\n"
-            "   • Confirm order\n"
-            "   • Operator will contact you\n\n"
-            "2️⃣ *Sell crypto*\n"
-            "   • Choose currency\n"
-            "   • Enter amount in RUB\n"
-            "   • Confirm order\n"
-            "   • Operator will contact you\n\n"
-            "3️⃣ *Rates*\n"
-            "   • Current rates with 10% markup (buy) and -2% (sell)\n\n"
-            "4️⃣ *Contacts*\n"
-            "   • Contact operator: button below\n\n"
-            "⏰ *Working hours:* 10:00 – 22:00 MSK"
-        ),
-        'contacts_text': (
-            "📞 *Contact operator:*\n\n"
-            "• Telegram: @shakakobmen\n"
-            "• WhatsApp: +7 999 123-45-67\n"
-            "• Email: support@crypto-exchange.ru\n\n"
-            "⏰ *Response time:* usually within 5 minutes"
-        ),
-        'admin_panel': "🔧 *Admin panel*\n\nSelect action:",
+        'select_lang': "🌐 Choose language:",
+        'help_text': "❓ How to use:\n\n1️⃣ Buy crypto\n   • Choose currency\n   • Enter amount\n   • Confirm order\n\n2️⃣ Sell crypto\n   • Choose currency\n   • Enter amount\n   • Confirm order\n\n3️⃣ Rates\n   • Current rates with 10% markup (buy) and -2% (sell)\n\n4️⃣ Contacts\n   • Contact operator: button below\n\n⏰ Working hours: 10:00 – 22:00 MSK",
+        'contacts_text': "📞 Contact operator:\n\n• Telegram: @shakakobmen\n• WhatsApp: +7 999 123-45-67\n• Email: support@crypto-exchange.ru\n\n⏰ Response time: usually within 5 minutes",
+        'admin_panel': "🔧 Admin panel\n\nSelect action:",
         'admin_orders_btn': "📋 Orders list",
         'admin_stats_btn': "📊 Statistics",
-        'loading_rates': "🔄 *Loading current rates...*",
+        'loading_rates': "🔄 Loading current rates...",
         'confirm_yes': "✅ Yes, confirm",
         'confirm_no': "❌ No, cancel"
     }
@@ -422,23 +365,23 @@ async def start(message: types.Message):
     photo_url = "https://raw.githubusercontent.com/alexandr956/crypto-bot/main/welcome.jpg"
     lang = get_lang(uid)
     
+    welcome_text = get_text(uid, 'welcome')
     if lang == 'ru':
-        welcome_text = f"👋 *Привет, {message.from_user.first_name}!*\n\n🏦 *Добро пожаловать в КриптоОбменник MOSS PAY*\n\n💎 *Почему выбирают нас:*\n• 🚀 Мгновенные заявки\n• 🔒 Безопасные сделки\n• 💬 Поддержка 24/7\n• 💰 Лучшие курсы\n\n👇 *Выберите действие в меню ниже*"
+        welcome_text = f"👋 Привет, {message.from_user.first_name}!\n\n🏦 Добро пожаловать в КриптоОбменник MOSS PAY\n\n💎 Почему выбирают нас:\n• 🚀 Мгновенные заявки\n• 🔒 Безопасные сделки\n• 💬 Поддержка 24/7\n• 💰 Лучшие курсы\n\n👇 Выберите действие в меню ниже"
     else:
-        welcome_text = f"👋 *Hi {message.from_user.first_name}!*\n\n🏦 *Welcome to MOSS PAY Crypto Exchanger*\n\n💎 *Why choose us:*\n• 🚀 Instant orders\n• 🔒 Secure transactions\n• 💬 24/7 support\n• 💰 Best rates\n\n👇 *Select an action below*"
+        welcome_text = f"👋 Hi {message.from_user.first_name}!\n\n🏦 Welcome to MOSS PAY Crypto Exchanger\n\n💎 Why choose us:\n• 🚀 Instant orders\n• 🔒 Secure transactions\n• 💬 24/7 support\n• 💰 Best rates\n\n👇 Select an action below"
     
     try:
-        await message.answer_photo(photo_url, caption=welcome_text, parse_mode="Markdown", reply_markup=main_menu(uid))
+        await message.answer_photo(photo_url, caption=welcome_text, reply_markup=main_menu(uid))
     except:
-        await message.answer(welcome_text, parse_mode="Markdown", reply_markup=main_menu(uid))
+        await message.answer(welcome_text, reply_markup=main_menu(uid))
 
 @dp.message(Command("admin"))
 async def admin_panel(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
-    await message.answer(get_text(ADMIN_ID, 'admin_panel'), parse_mode="Markdown", reply_markup=admin_menu())
+    await message.answer(get_text(ADMIN_ID, 'admin_panel'), reply_markup=admin_menu())
 
-# ========== КОМАНДА ДЛЯ ИЗМЕНЕНИЯ КУРСОВ ==========
 @dp.message(Command("setrates"))
 async def set_rates(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -449,16 +392,15 @@ async def set_rates(message: types.Message):
         parts = message.text.split()
         if len(parts) != 3:
             await message.answer(
-                "❌ *Неверный формат*\n\n"
-                "Используй:\n"
-                "`/setrates usdt 92.50`\n"
-                "`/setrates btc 5600000`\n"
-                "`/setrates eth 230000`\n\n"
-                f"📊 *Текущие курсы:*\n"
+                f"❌ Неверный формат\n\n"
+                f"Используй:\n"
+                f"/setrates usdt 92.50\n"
+                f"/setrates btc 5600000\n"
+                f"/setrates eth 230000\n\n"
+                f"📊 Текущие курсы:\n"
                 f"└ USDT: {get_market_usdt()} ₽\n"
                 f"└ BTC: {get_market_btc():,.0f} ₽\n"
-                f"└ ETH: {get_market_eth():,.0f} ₽",
-                parse_mode="Markdown"
+                f"└ ETH: {get_market_eth():,.0f} ₽"
             )
             return
         
@@ -471,20 +413,19 @@ async def set_rates(message: types.Message):
         
         if currency == 'usdt':
             set_market_usdt(new_rate)
-            await message.answer(f"✅ *Курс USDT обновлён!*\n\nНовый курс: {new_rate:.2f} ₽", parse_mode="Markdown")
+            await message.answer(f"✅ Курс USDT обновлён!\n\nНовый курс: {new_rate:.2f} ₽")
         elif currency == 'btc':
             set_market_btc(new_rate)
-            await message.answer(f"✅ *Курс BTC обновлён!*\n\nНовый курс: {new_rate:,.0f} ₽", parse_mode="Markdown")
+            await message.answer(f"✅ Курс BTC обновлён!\n\nНовый курс: {new_rate:,.0f} ₽")
         elif currency == 'eth':
             set_market_eth(new_rate)
-            await message.answer(f"✅ *Курс ETH обновлён!*\n\nНовый курс: {new_rate:,.0f} ₽", parse_mode="Markdown")
+            await message.answer(f"✅ Курс ETH обновлён!\n\nНовый курс: {new_rate:,.0f} ₽")
         else:
-            await message.answer("❌ Доступные валюты: `usdt`, `btc`, `eth`", parse_mode="Markdown")
+            await message.answer("❌ Доступные валюты: usdt, btc, eth")
         
     except ValueError:
-        await message.answer("❌ Введи число. Пример: `/setrates usdt 92.50`", parse_mode="Markdown")
+        await message.answer("❌ Введи число. Пример: /setrates usdt 92.50")
 
-# ========== КОМАНДА ДЛЯ ПРОВЕРКИ ТЕКУЩИХ КУРСОВ ==========
 @dp.message(Command("rates"))
 async def show_rates_admin(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -492,14 +433,12 @@ async def show_rates_admin(message: types.Message):
         return
     
     await message.answer(
-        f"📊 *Текущие рыночные курсы:*\n\n"
+        f"📊 Текущие рыночные курсы:\n\n"
         f"└ USDT: {get_market_usdt():.2f} ₽\n"
         f"└ BTC: {get_market_btc():,.0f} ₽\n"
-        f"└ ETH: {get_market_eth():,.0f} ₽",
-        parse_mode="Markdown"
+        f"└ ETH: {get_market_eth():,.0f} ₽"
     )
 
-# ========== КОМАНДА ДЛЯ ИЗМЕНЕНИЯ ЛИМИТОВ ==========
 @dp.message(Command("setlimits"))
 async def set_limits(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -510,10 +449,9 @@ async def set_limits(message: types.Message):
         parts = message.text.split()
         if len(parts) != 3:
             await message.answer(
-                "❌ *Неверный формат*\n\n"
-                "Используй: `/setlimits 1000 50000`\n"
-                f"Текущие лимиты: {get_min_limit()} - {get_max_limit()} ₽",
-                parse_mode="Markdown"
+                f"❌ Неверный формат\n\n"
+                f"Используй: /setlimits 1000 50000\n"
+                f"Текущие лимиты: {get_min_limit()} - {get_max_limit()} ₽"
             )
             return
         
@@ -531,16 +469,11 @@ async def set_limits(message: types.Message):
         set_min_limit(new_min)
         set_max_limit(new_max)
         
-        await message.answer(
-            f"✅ *Лимиты обновлены!*\n\n"
-            f"📊 Новые лимиты: {new_min} - {new_max} ₽",
-            parse_mode="Markdown"
-        )
+        await message.answer(f"✅ Лимиты обновлены!\n\n📊 Новые лимиты: {new_min} - {new_max} ₽")
         
     except ValueError:
-        await message.answer("❌ Введи числа. Пример: `/setlimits 1000 50000`", parse_mode="Markdown")
+        await message.answer("❌ Введи числа. Пример: /setlimits 1000 50000")
 
-# ========== КОМАНДА ДЛЯ ПРОВЕРКИ ЛИМИТОВ ==========
 @dp.message(Command("limits"))
 async def show_limits_admin(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -548,10 +481,9 @@ async def show_limits_admin(message: types.Message):
         return
     
     await message.answer(
-        f"📊 *Текущие лимиты:*\n\n"
+        f"📊 Текущие лимиты:\n\n"
         f"💰 Минимальная сумма: {get_min_limit()} ₽\n"
-        f"💰 Максимальная сумма: {get_max_limit()} ₽",
-        parse_mode="Markdown"
+        f"💰 Максимальная сумма: {get_max_limit()} ₽"
     )
 
 @dp.callback_query()
@@ -559,7 +491,6 @@ async def handle_callback(call: types.CallbackQuery):
     uid = call.from_user.id
     data = call.data
     
-    # Подтверждение заявки
     if data.startswith("confirm_yes_"):
         order_id = int(data.split("_")[2])
         if order_id not in pending_orders:
@@ -583,22 +514,20 @@ async def handle_callback(call: types.CallbackQuery):
         
         await call.message.edit_text(
             get_text(uid, 'order_created', id=order_id_db, type=type_text, coin=coin, amount=f"{rub:,.0f}", crypto=crypto),
-            parse_mode="Markdown",
             reply_markup=main_menu(uid)
         )
         
         username = f"@{call.from_user.username}" if call.from_user.username else "no username"
         await bot.send_message(
             ADMIN_ID,
-            f"🆕 *НОВАЯ ЗАЯВКА #{order_id_db}*\n\n"
+            f"🆕 НОВАЯ ЗАЯВКА #{order_id_db}\n\n"
             f"📌 {type_text} {coin}\n"
             f"💰 Сумма: {rub:,.0f} ₽\n"
             f"🪙 Крипта: {crypto:.8f} {coin}\n"
             f"👤 Пользователь: {call.from_user.full_name}\n"
             f"{username}\n"
             f"🆔 ID: {uid}\n"
-            f"📊 Статус: 🟡 Ожидает",
-            parse_mode="Markdown",
+            f"📊 Статус: Ожидает",
             reply_markup=order_buttons(order_id_db, 'pending')
         )
         await call.answer()
@@ -608,11 +537,10 @@ async def handle_callback(call: types.CallbackQuery):
         order_id = int(data.split("_")[2])
         if order_id in pending_orders:
             del pending_orders[order_id]
-        await call.message.edit_text(get_text(uid, 'order_cancelled'), parse_mode="Markdown", reply_markup=main_menu(uid))
+        await call.message.edit_text(get_text(uid, 'order_cancelled'), reply_markup=main_menu(uid))
         await call.answer()
         return
     
-    # Смена языка
     if data == "change_lang":
         await call.message.edit_reply_markup(reply_markup=lang_menu())
         await call.answer()
@@ -623,107 +551,91 @@ async def handle_callback(call: types.CallbackQuery):
         cur.execute("UPDATE users SET language = ? WHERE user_id = ?", (lang, uid))
         conn.commit()
         await call.message.edit_reply_markup(reply_markup=main_menu(uid))
-        await call.message.answer(get_text(uid, 'lang_selected'), parse_mode="Markdown")
+        await call.message.answer(get_text(uid, 'lang_selected'))
         await call.answer()
         return
     
-    # Назад в главное меню
     if data == "main":
         await call.message.edit_reply_markup(reply_markup=main_menu(uid))
         await call.answer()
         return
     
-    # Покупка
     if data == "buy":
         await call.message.edit_reply_markup(reply_markup=buy_menu(uid))
         await call.answer()
         return
     
-    # Продажа
     if data == "sell":
         await call.message.edit_reply_markup(reply_markup=sell_menu(uid))
         await call.answer()
         return
     
-    # Курсы
     if data == "rates":
-        await call.message.answer(get_text(uid, 'loading_rates'), parse_mode="Markdown")
+        await call.message.answer(get_text(uid, 'loading_rates'))
         
         rates = await get_crypto_rates()
-
         if rates is None:
-            await call.message.answer("❌ *Не удалось загрузить курсы. Попробуйте позже.*", parse_mode="Markdown")
+            await call.message.answer("❌ Не удалось загрузить курсы. Попробуйте позже.")
             await call.answer()
             return
 
         market_usdt = rates['market']['usdt']
         market_btc = rates['market']['btc']
         market_eth = rates['market']['eth']
-        
         buy_usdt = rates['buy']['usdt']
         buy_btc = rates['buy']['btc']
         buy_eth = rates['buy']['eth']
-        
         sell_usdt = rates['sell']['usdt']
         sell_btc = rates['sell']['btc']
         sell_eth = rates['sell']['eth']
 
         if get_lang(uid) == 'ru':
             text = (
-                f"📊 *Рыночные курсы:*\n"
+                f"📊 Рыночные курсы:\n"
                 f"└ USDT: {market_usdt:.2f} ₽\n"
                 f"└ BTC: {market_btc:,.0f} ₽\n"
                 f"└ ETH: {market_eth:,.0f} ₽\n\n"
-                
-                f"📈 *Покупка через MOSS PAY (+10%):*\n"
+                f"📈 Покупка через MOSS PAY (+10%):\n"
                 f"└ USDT: {buy_usdt:.2f} ₽\n"
                 f"└ BTC: {buy_btc:,.0f} ₽\n"
                 f"└ ETH: {buy_eth:,.0f} ₽\n\n"
-                
-                f"📉 *Продажа через MOSS PAY (-2%):*\n"
+                f"📉 Продажа через MOSS PAY (-2%):\n"
                 f"└ USDT: {sell_usdt:.2f} ₽\n"
                 f"└ BTC: {sell_btc:,.0f} ₽\n"
                 f"└ ETH: {sell_eth:,.0f} ₽\n\n"
-                
-                f"⚙️ *Комиссия MOSS PAY:* покупка +10%, продажа -2%"
+                f"⚙️ Комиссия MOSS PAY: покупка +10%, продажа -2%"
             )
         else:
             text = (
-                f"📊 *Market rates:*\n"
+                f"📊 Market rates:\n"
                 f"└ USDT: {market_usdt:.2f} RUB\n"
                 f"└ BTC: {market_btc:,.0f} RUB\n"
                 f"└ ETH: {market_eth:,.0f} RUB\n\n"
-                
-                f"📈 *Buy via MOSS PAY (+10%):*\n"
+                f"📈 Buy via MOSS PAY (+10%):\n"
                 f"└ USDT: {buy_usdt:.2f} RUB\n"
                 f"└ BTC: {buy_btc:,.0f} RUB\n"
                 f"└ ETH: {buy_eth:,.0f} RUB\n\n"
-                
-                f"📉 *Sell via MOSS PAY (-2%):*\n"
+                f"📉 Sell via MOSS PAY (-2%):\n"
                 f"└ USDT: {sell_usdt:.2f} RUB\n"
                 f"└ BTC: {sell_btc:,.0f} RUB\n"
                 f"└ ETH: {sell_eth:,.0f} RUB\n\n"
-                
-                f"⚙️ *MOSS PAY fee:* buy +10%, sell -2%"
+                f"⚙️ MOSS PAY fee: buy +10%, sell -2%"
             )
         
-        await call.message.answer(text, parse_mode="Markdown", reply_markup=main_menu(uid))
+        await call.message.answer(text, reply_markup=main_menu(uid))
         await call.answer()
         return
     
-    # Помощь
     if data == "help":
-        await call.message.answer(get_text(uid, 'help_text'), parse_mode="Markdown", reply_markup=main_menu(uid))
+        await call.message.answer(get_text(uid, 'help_text'), reply_markup=main_menu(uid))
         await call.answer()
         return
     
-    # Контакты
     if data == "contacts":
-        await call.message.answer(get_text(uid, 'contacts_text'), parse_mode="Markdown", reply_markup=contacts_menu(uid))
+        await call.message.answer(get_text(uid, 'contacts_text'), reply_markup=contacts_menu(uid))
         await call.answer()
         return
     
-    # Админ панель - список заявок
     if data == "admin_orders":
         if uid != ADMIN_ID:
             await call.answer("Доступ запрещен", show_alert=True)
@@ -731,24 +643,23 @@ async def handle_callback(call: types.CallbackQuery):
         cur.execute('SELECT id, type, coin, amount, status FROM orders WHERE status != "completed" ORDER BY created_at DESC')
         orders = cur.fetchall()
         if not orders:
-            await call.message.answer(get_text(ADMIN_ID, 'no_orders'), parse_mode="Markdown")
+            await call.message.answer(get_text(ADMIN_ID, 'no_orders'))
         else:
             for order in orders:
                 order_id, o_type, coin, amount, status = order
                 type_text = "Покупка" if o_type == "buy" else "Продажа"
                 status_display = {
-                    'pending': '🟡 Ожидает',
-                    'processing': '🔵 В обработке',
-                    'rejected': '🔴 Отклонена',
-                    'cancelled': '⚫ Отменена'
+                    'pending': 'Ожидает',
+                    'processing': 'В обработке',
+                    'rejected': 'Отклонена',
+                    'cancelled': 'Отменена'
                 }
                 status_text = status_display.get(status, status)
-                text = f"📋 *Заявка #{order_id}*\n\n{type_text} {coin}\n💰 {amount:,.0f} ₽\n📊 Статус: {status_text}"
-                await call.message.answer(text, parse_mode="Markdown", reply_markup=order_buttons(order_id, status))
+                text = f"📋 Заявка #{order_id}\n\n{type_text} {coin}\n💰 {amount:,.0f} ₽\n📊 Статус: {status_text}"
+                await call.message.answer(text, reply_markup=order_buttons(order_id, status))
         await call.answer()
         return
     
-    # Админ панель - статистика
     if data == "admin_stats":
         if uid != ADMIN_ID:
             await call.answer("Доступ запрещен", show_alert=True)
@@ -763,18 +674,17 @@ async def handle_callback(call: types.CallbackQuery):
         total_orders, total_sum = cur.fetchone()
         
         text = (
-            "📊 *Статистика:*\n\n"
+            f"📊 Статистика:\n\n"
             f"🟡 Ожидают: {pending_orders_count or 0} (на {pending_sum or 0:,.0f} ₽)\n"
             f"🔵 В обработке: {processing_orders or 0} (на {processing_sum or 0:,.0f} ₽)\n"
             f"🟢 Выполнено: {completed_orders or 0} (на {completed_sum or 0:,.0f} ₽)\n\n"
             f"📦 Всего заявок: {total_orders or 0}\n"
             f"💵 Общая сумма: {total_sum or 0:,.0f} ₽"
         )
-        await call.message.answer(text, parse_mode="Markdown", reply_markup=admin_menu())
+        await call.message.answer(text, reply_markup=admin_menu())
         await call.answer()
         return
     
-    # Обработка админских кнопок (статусы)
     if data.startswith("process_"):
         if uid != ADMIN_ID:
             await call.answer("Доступ запрещен", show_alert=True)
@@ -805,12 +715,11 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Выбор валюты для покупки
     if data.startswith("buy_"):
         coin = data.split("_")[1]
         rates = await get_crypto_rates()
         if rates is None:
-            await call.message.answer("❌ *Ошибка загрузки курсов. Попробуйте позже.*", parse_mode="Markdown")
+            await call.message.answer("❌ Ошибка загрузки курсов. Попробуйте позже.")
             await call.answer()
             return
         
@@ -818,18 +727,16 @@ async def handle_callback(call: types.CallbackQuery):
         min_limit = get_min_limit()
         max_limit = get_max_limit()
         await call.message.answer(
-            get_text(uid, 'select_buy', coin=coin, min=min_limit, max=max_limit),
-            parse_mode="Markdown"
+            get_text(uid, 'select_buy', coin=coin, min=min_limit, max=max_limit)
         )
         await call.answer()
         return
     
-    # Выбор валюты для продажи
     if data.startswith("sell_"):
         coin = data.split("_")[1]
         rates = await get_crypto_rates()
         if rates is None:
-            await call.message.answer("❌ *Ошибка загрузки курсов. Попробуйте позже.*", parse_mode="Markdown")
+            await call.message.answer("❌ Ошибка загрузки курсов. Попробуйте позже.")
             await call.answer()
             return
         
@@ -837,8 +744,7 @@ async def handle_callback(call: types.CallbackQuery):
         min_limit = get_min_limit()
         max_limit = get_max_limit()
         await call.message.answer(
-            get_text(uid, 'select_sell', coin=coin, min=min_limit, max=max_limit),
-            parse_mode="Markdown"
+            get_text(uid, 'select_sell', coin=coin, min=min_limit, max=max_limit)
         )
         await call.answer()
         return
@@ -856,8 +762,7 @@ async def handle_amount(message: types.Message):
         
         if rub < min_limit or rub > max_limit:
             await message.answer(
-                get_text(uid, 'limit_error', min=min_limit, max=max_limit),
-                parse_mode="Markdown"
+                get_text(uid, 'limit_error', min=min_limit, max=max_limit)
             )
             return
         
@@ -873,7 +778,6 @@ async def handle_amount(message: types.Message):
         
         await message.answer(
             get_text(uid, 'confirm_order', amount=f"{rub:,.0f}", crypto=crypto, coin=coin, min=min_limit, max=max_limit),
-            parse_mode="Markdown",
             reply_markup=confirm_menu(order_id)
         )
         
@@ -881,8 +785,7 @@ async def handle_amount(message: types.Message):
         min_limit = get_min_limit()
         max_limit = get_max_limit()
         await message.answer(
-            get_text(uid, 'limit_error', min=min_limit, max=max_limit),
-            parse_mode="Markdown"
+            get_text(uid, 'limit_error', min=min_limit, max=max_limit)
         )
 
 @dp.message(Command("orders"))
@@ -892,15 +795,15 @@ async def user_orders(message: types.Message):
     orders = cur.fetchall()
     
     if not orders:
-        await message.answer(get_text(uid, 'no_orders'), parse_mode="Markdown")
+        await message.answer(get_text(uid, 'no_orders'))
         return
     
     status_display = {
-        'pending': '🟡 Ожидает обработки',
-        'processing': '🔵 В обработке',
-        'completed': '🟢 Выполнена',
-        'rejected': '🔴 Отклонена',
-        'cancelled': '⚫ Отменена'
+        'pending': 'Ожидает обработки',
+        'processing': 'В обработке',
+        'completed': 'Выполнена',
+        'rejected': 'Отклонена',
+        'cancelled': 'Отменена'
     }
     
     text = get_text(uid, 'orders_title')
@@ -911,10 +814,9 @@ async def user_orders(message: types.Message):
         date = time.strftime('%d.%m %H:%M', time.localtime(created_at))
         text += f"📌 #{order_id} | {type_text} {coin}\n   💰 {amount:,.0f} ₽ | {status_text} | {date}\n\n"
     
-    await message.answer(text, parse_mode="Markdown")
+    await message.answer(text)
 
 async def main():
-    # Удаляем старый webhook, если есть (решает проблему конфликта экземпляров)
     await bot.delete_webhook(drop_pending_updates=True)
     print("✅ Webhook удален")
     print("✅ Бот запущен")
