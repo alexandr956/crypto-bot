@@ -339,6 +339,11 @@ def order_buttons(order_id, status):
     else:
         return None
 
+def back_menu(user_id):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_text(user_id, 'back_btn'), callback_data="main")]
+    ])
+
 def lang_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang_ru")],
@@ -628,13 +633,13 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Обработчик кнопки "История заявок"
+    # Обработчик кнопки "История заявок" (только кнопка "Назад")
     if data == "history":
         cur.execute('SELECT id, type, coin, amount, status, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 10', (uid,))
         orders = cur.fetchall()
         
         if not orders:
-            await call.message.answer(get_text(uid, 'no_orders'), reply_markup=main_menu(uid))
+            await call.message.answer(get_text(uid, 'no_orders'), reply_markup=back_menu(uid))
             await call.answer()
             return
         
@@ -654,7 +659,7 @@ async def handle_callback(call: types.CallbackQuery):
             date = time.strftime('%d.%m %H:%M', time.localtime(created_at))
             text += f"📌 #{order_id} | {type_text} {coin}\n   💰 {amount:,.0f} ₽ | {status_text} | {date}\n\n"
         
-        await call.message.answer(text, reply_markup=main_menu(uid))
+        await call.message.answer(text, reply_markup=back_menu(uid))
         await call.answer()
         return
     
