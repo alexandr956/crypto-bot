@@ -914,7 +914,8 @@ async def user_orders(message: types.Message):
     await message.answer(text, parse_mode="Markdown")
 
 async def main():
-     await bot.delete_webhook(drop_pending_updates=True)
+    # Удаляем старый webhook, если есть (решает проблему конфликта экземпляров)
+    await bot.delete_webhook(drop_pending_updates=True)
     print("✅ Webhook удален")
     print("✅ Бот запущен")
     await dp.start_polling(bot)
