@@ -213,7 +213,7 @@ async def update_order_status(order_id, new_status):
 # ========== ТЕКСТЫ ==========
 TEXTS = {
     'ru': {
-        'welcome': f"👋 Привет!\n\n🏦 Добро пожаловать в КриптоОбменник MOSS PAY\n\n💎 Почему выбирают нас:\n• 🚀 Мгновенные заявки\n• 🔒 Безопасные сделки\n• 💬 Поддержка 24/7\n• 💰 Лучшие курсы\n\n👇 Выберите действие в меню ниже",
+        'welcome': "🏦 Добро пожаловать в КриптоОбменник MOSS PAY",
         'buy_btn': "🟢 Купить",
         'sell_btn': "🔴 Продать",
         'rates_btn': "📊 Курсы",
@@ -244,7 +244,7 @@ TEXTS = {
         'confirm_no': "❌ Нет, отменить"
     },
     'en': {
-        'welcome': f"👋 Hi!\n\n🏦 Welcome to MOSS PAY Crypto Exchanger\n\n💎 Why choose us:\n• 🚀 Instant orders\n• 🔒 Secure transactions\n• 💬 24/7 support\n• 💰 Best rates\n\n👇 Select an action below",
+        'welcome': "🏦 Welcome to MOSS PAY Crypto Exchanger",
         'buy_btn': "🟢 Buy",
         'sell_btn': "🔴 Sell",
         'rates_btn': "📊 Rates",
@@ -374,9 +374,29 @@ async def start(message: types.Message):
     lang = get_lang(uid)
     
     if lang == 'ru':
-        welcome_text = f"👋 Привет, {message.from_user.first_name}!\n\n🏦 Добро пожаловать в КриптоОбменник MOSS PAY\n\n💎 Почему выбирают нас:\n• 🚀 Мгновенные заявки\n• 🔒 Безопасные сделки\n• 💬 Поддержка 24/7\n• 💰 Лучшие курсы\n\n👇 Выберите действие в меню ниже"
+        welcome_text = (
+            f"👋 Привет, {message.from_user.first_name}!\n\n"
+            f"🏦 Добро пожаловать в КриптоОбменник MOSS PAY\n\n"
+            f"💎 Почему выбирают нас:\n"
+            f"• 🚀 Мгновенные заявки\n"
+            f"• 🔒 Безопасные сделки\n"
+            f"• 💬 Поддержка 24/7\n"
+            f"• 💰 Лучшие курсы\n"
+            f"• 🔑 Обмен без KYC (верификации)\n\n"
+            f"👇 Выберите действие в меню ниже"
+        )
     else:
-        welcome_text = f"👋 Hi {message.from_user.first_name}!\n\n🏦 Welcome to MOSS PAY Crypto Exchanger\n\n💎 Why choose us:\n• 🚀 Instant orders\n• 🔒 Secure transactions\n• 💬 24/7 support\n• 💰 Best rates\n\n👇 Select an action below"
+        welcome_text = (
+            f"👋 Hi {message.from_user.first_name}!\n\n"
+            f"🏦 Welcome to MOSS PAY Crypto Exchanger\n\n"
+            f"💎 Why choose us:\n"
+            f"• 🚀 Instant orders\n"
+            f"• 🔒 Secure transactions\n"
+            f"• 💬 24/7 support\n"
+            f"• 💰 Best rates\n"
+            f"• 🔑 Exchange without KYC (verification)\n\n"
+            f"👇 Select an action below"
+        )
     
     try:
         await message.answer_photo(photo_url, caption=welcome_text, reply_markup=main_menu(uid))
@@ -633,7 +653,7 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Обработчик кнопки "История заявок" (только кнопка "Назад")
+    # Обработчик кнопки "История заявок"
     if data == "history":
         cur.execute('SELECT id, type, coin, amount, status, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 10', (uid,))
         orders = cur.fetchall()
