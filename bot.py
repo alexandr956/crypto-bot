@@ -217,6 +217,7 @@ TEXTS = {
         'buy_btn': "🟢 Купить",
         'sell_btn': "🔴 Продать",
         'rates_btn': "📊 Курсы",
+        'history_btn': "📜 История заявок",
         'help_btn': "❓ Помощь",
         'contacts_btn': "📞 Контакты",
         'back_btn': "🔙 Назад",
@@ -247,6 +248,7 @@ TEXTS = {
         'buy_btn': "🟢 Buy",
         'sell_btn': "🔴 Sell",
         'rates_btn': "📊 Rates",
+        'history_btn': "📜 Order history",
         'help_btn': "❓ Help",
         'contacts_btn': "📞 Contacts",
         'back_btn': "🔙 Back",
@@ -293,6 +295,7 @@ def main_menu(user_id):
         [InlineKeyboardButton(text=get_text(user_id, 'buy_btn'), callback_data="buy")],
         [InlineKeyboardButton(text=get_text(user_id, 'sell_btn'), callback_data="sell")],
         [InlineKeyboardButton(text=get_text(user_id, 'rates_btn'), callback_data="rates")],
+        [InlineKeyboardButton(text=get_text(user_id, 'history_btn'), callback_data="history")],
         [InlineKeyboardButton(text=get_text(user_id, 'help_btn'), callback_data="help")],
         [InlineKeyboardButton(text=get_text(user_id, 'contacts_btn'), callback_data="contacts")],
         [InlineKeyboardButton(text=get_text(user_id, 'change_lang'), callback_data="change_lang")]
@@ -365,7 +368,6 @@ async def start(message: types.Message):
     photo_url = "https://raw.githubusercontent.com/alexandr956/crypto-bot/main/welcome.jpg"
     lang = get_lang(uid)
     
-    welcome_text = get_text(uid, 'welcome')
     if lang == 'ru':
         welcome_text = f"👋 Привет, {message.from_user.first_name}!\n\n🏦 Добро пожаловать в КриптоОбменник MOSS PAY\n\n💎 Почему выбирают нас:\n• 🚀 Мгновенные заявки\n• 🔒 Безопасные сделки\n• 💬 Поддержка 24/7\n• 💰 Лучшие курсы\n\n👇 Выберите действие в меню ниже"
     else:
@@ -626,6 +628,36 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
+    # Обработчик кнопки "История заявок"
+    if data == "history":
+        cur.execute('SELECT id, type, coin, amount, status, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 10', (uid,))
+        orders = cur.fetchall()
+        
+        if not orders:
+            await call.message.answer(get_text(uid, 'no_orders'), reply_markup=main_menu(uid))
+            await call.answer()
+            return
+        
+        status_display = {
+            'pending': 'Ожидает обработки',
+            'processing': 'В обработке',
+            'completed': 'Выполнена',
+            'rejected': 'Отклонена',
+            'cancelled': 'Отменена'
+        }
+        
+        text = get_text(uid, 'orders_title')
+        for order in orders:
+            order_id, o_type, coin, amount, status, created_at = order
+            type_text = "Покупка" if o_type == "buy" else "Продажа"
+            status_text = status_display.get(status, status)
+            date = time.strftime('%d.%m %H:%M', time.localtime(created_at))
+            text += f"📌 #{order_id} | {type_text} {coin}\n   💰 {amount:,.0f} ₽ | {status_text} | {date}\n\n"
+        
+        await call.message.answer(text, reply_markup=main_menu(uid))
+        await call.answer()
+        return
+    
     if data == "help":
         await call.message.answer(get_text(uid, 'help_text'), reply_markup=main_menu(uid))
         await call.answer()
@@ -787,34 +819,6 @@ async def handle_amount(message: types.Message):
         await message.answer(
             get_text(uid, 'limit_error', min=min_limit, max=max_limit)
         )
-
-@dp.message(Command("orders"))
-async def user_orders(message: types.Message):
-    uid = message.from_user.id
-    cur.execute('SELECT id, type, coin, amount, status, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 10', (uid,))
-    orders = cur.fetchall()
-    
-    if not orders:
-        await message.answer(get_text(uid, 'no_orders'))
-        return
-    
-    status_display = {
-        'pending': 'Ожидает обработки',
-        'processing': 'В обработке',
-        'completed': 'Выполнена',
-        'rejected': 'Отклонена',
-        'cancelled': 'Отменена'
-    }
-    
-    text = get_text(uid, 'orders_title')
-    for order in orders:
-        order_id, o_type, coin, amount, status, created_at = order
-        type_text = "Покупка" if o_type == "buy" else "Продажа"
-        status_text = status_display.get(status, status)
-        date = time.strftime('%d.%m %H:%M', time.localtime(created_at))
-        text += f"📌 #{order_id} | {type_text} {coin}\n   💰 {amount:,.0f} ₽ | {status_text} | {date}\n\n"
-    
-    await message.answer(text)
 
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
