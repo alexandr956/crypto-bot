@@ -17,6 +17,7 @@ ADMIN_ID = 8177854087
 # Настройки по умолчанию
 DEFAULT_MIN_LIMIT = 1000
 DEFAULT_MAX_LIMIT = 50000
+REFERRAL_BONUS_PERCENT = 1  # 1% от суммы заявки реферала
 
 # Курсы для разных валют (в рублях)
 DEFAULT_RATES = {
@@ -86,7 +87,8 @@ cur.execute('''
         referrer_id INTEGER DEFAULT NULL,
         referral_code TEXT,
         created_at INTEGER,
-        bonus_balance REAL DEFAULT 0
+        bonus_balance REAL DEFAULT 0,
+        total_earned REAL DEFAULT 0
     )
 ''')
 
@@ -110,7 +112,7 @@ cur.execute('''
 # Сохраняем настройки по умолчанию
 cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('min_limit', ?)", (str(DEFAULT_MIN_LIMIT),))
 cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('max_limit', ?)", (str(DEFAULT_MAX_LIMIT),))
-cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('referral_bonus_percent', ?)", ("5",))
+cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('referral_bonus_percent', ?)", (str(REFERRAL_BONUS_PERCENT),))
 
 # Сохраняем курсы для каждой валюты
 for currency, rates in DEFAULT_RATES.items():
@@ -173,7 +175,8 @@ def generate_referral_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
 def add_bonus(user_id, amount, reason):
-    cur.execute("UPDATE users SET bonus_balance = bonus_balance + ? WHERE user_id = ?", (amount, user_id))
+    """Начисляет бонус пользователю и обновляет общий заработок"""
+    cur.execute("UPDATE users SET bonus_balance = bonus_balance + ?, total_earned = total_earned + ? WHERE user_id = ?", (amount, amount, user_id))
     conn.commit()
     
     user_lang = get_lang(user_id)
@@ -181,6 +184,29 @@ def add_bonus(user_id, amount, reason):
         asyncio.create_task(bot.send_message(user_id, f"🎉 *Бонус начислен!*\n\n💰 Сумма: {amount:,.2f} ₽\n📝 Причина: {reason}\n\nБонусы можно использовать для оплаты комиссии при обмене.", parse_mode="Markdown"))
     else:
         asyncio.create_task(bot.send_message(user_id, f"🎉 *Bonus added!*\n\n💰 Amount: {amount:,.2f} RUB\n📝 Reason: {reason}\n\nBonuses can be used to pay commission on exchanges.", parse_mode="Markdown"))
+
+def get_referral_stats(user_id):
+    """Возвращает статистику по рефералам"""
+    cur.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id = ?", (user_id,))
+    total_referrals = cur.fetchone()[0] or 0
+    
+    cur.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id = ? AND status = 'completed'", (user_id,))
+    active_referrals = cur.fetchone()[0] or 0
+    
+    cur.execute("SELECT total_earned FROM users WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    total_earned = row[0] if row else 0
+    
+    cur.execute("SELECT bonus_balance FROM users WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    current_balance = row[0] if row else 0
+    
+    return {
+        'total': total_referrals,
+        'active': active_referrals,
+        'earned': total_earned,
+        'balance': current_balance
+    }
 
 pending_orders = {}
 
@@ -366,6 +392,23 @@ async def update_order_status(order_id, new_status, reject_reason=None):
         parse_mode="Markdown",
         reply_markup=user_notification_buttons(order_id, user_lang)
     )
+    
+    # Если заявка выполнена, начисляем бонус рефереру
+    if new_status == 'completed':
+        bonus_percent = get_setting('referral_bonus_percent', 1)
+        bonus = amount * (bonus_percent / 100)
+        
+        if bonus > 0:
+            # Находим реферера (кто пригласил этого пользователя)
+            cur.execute("SELECT referrer_id FROM users WHERE user_id = ?", (user_id_db,))
+            row = cur.fetchone()
+            if row and row[0]:
+                referrer_id = row[0]
+                add_bonus(referrer_id, bonus, f"Заявка #{order_id} от реферала ({bonus_percent}%)")
+                
+                # Отмечаем реферала как выполненного
+                cur.execute("UPDATE referrals SET status = 'completed' WHERE referred_id = ?", (user_id_db,))
+                conn.commit()
 
 # ========== ТЕКСТЫ ==========
 TEXTS = {
@@ -402,7 +445,9 @@ TEXTS = {
         'admin_stats_btn': "📊 Статистика",
         'loading_rates': "🔄 Загружаю актуальные курсы...",
         'confirm_yes': "✅ Да, подтверждаю",
-        'confirm_no': "❌ Нет, отменить"
+        'confirm_no': "❌ Нет, отменить",
+        'referral_info': "👥 *Реферальная система*\n\nПриглашай друзей и получай бонусы!\n\n🔗 *Твоя ссылка:*\n`{link}`\n\n📊 *Твоя статистика:*\n• 👥 Приглашено друзей: {total}\n• ✅ Активных рефералов: {active}\n• 💰 Всего заработано: {earned:.2f} ₽\n• 💎 Текущий баланс: {balance:.2f} ₽\n\n💎 *Как это работает:*\n• Отправь ссылку другу\n• Друг переходит по ссылке и нажимает Start\n• При выполнении заявки другом ты получаешь {percent}% бонус\n\n📋 Нажми «Скопировать ссылку», затем отправь её другу.",
+        'no_referral_code': "❌ Не удалось создать реферальную ссылку"
     },
     'en': {
         'welcome': "🏦 Welcome to MOSS PAY Crypto Exchanger",
@@ -437,7 +482,9 @@ TEXTS = {
         'admin_stats_btn': "📊 Statistics",
         'loading_rates': "🔄 Loading current rates...",
         'confirm_yes': "✅ Yes, confirm",
-        'confirm_no': "❌ No, cancel"
+        'confirm_no': "❌ No, cancel",
+        'referral_info': "👥 *Referral system*\n\nInvite friends and get bonuses!\n\n🔗 *Your link:*\n`{link}`\n\n📊 *Your statistics:*\n• 👥 Friends invited: {total}\n• ✅ Active referrals: {active}\n• 💰 Total earned: {earned:.2f} RUB\n• 💎 Current balance: {balance:.2f} RUB\n\n💎 *How it works:*\n• Send link to friend\n• Friend follows link and presses Start\n• When friend completes an order, you get {percent}% bonus\n\n📋 Press «Copy link», then send it to your friend.",
+        'no_referral_code': "❌ Failed to create referral link"
     }
 }
 
@@ -548,8 +595,8 @@ async def start(message: types.Message):
     if not cur.fetchone():
         referral_code = generate_referral_code()
         cur.execute('''
-            INSERT INTO users (user_id, username, full_name, language, fiat_currency, referrer_id, referral_code, created_at, bonus_balance)
-            VALUES (?, ?, ?, 'ru', 'RUB', ?, ?, ?, 0)
+            INSERT INTO users (user_id, username, full_name, language, fiat_currency, referrer_id, referral_code, created_at, bonus_balance, total_earned)
+            VALUES (?, ?, ?, 'ru', 'RUB', ?, ?, ?, 0, 0)
         ''', (uid, username, full_name, referrer_id, referral_code, int(time.time())))
         
         # Если есть реферер, записываем реферала
@@ -558,11 +605,6 @@ async def start(message: types.Message):
                 INSERT INTO referrals (referrer_id, referred_id, created_at, status)
                 VALUES (?, ?, ?, 'pending')
             ''', (referrer_id, uid, int(time.time())))
-            
-            # Начисляем бонус рефереру (5% от мин. лимита)
-            min_limit = get_min_limit()
-            bonus = min_limit * 0.05
-            add_bonus(referrer_id, bonus, "Регистрация реферала")
         
         conn.commit()
     
@@ -736,11 +778,10 @@ async def handle_callback(call: types.CallbackQuery):
     if data == "referral":
         referral_link = get_referral_link_sync(uid)
         if referral_link:
-            cur.execute("SELECT bonus_balance FROM users WHERE user_id = ?", (uid,))
-            row = cur.fetchone()
-            bonus = row[0] if row else 0
+            stats = get_referral_stats(uid)
+            bonus_percent = get_setting('referral_bonus_percent', 1)
             
-            # Две кнопки: скопировать и поделиться
+            # Кнопки: скопировать и поделиться
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="📋 Скопировать ссылку", callback_data=f"copy_link_{uid}")],
                 [InlineKeyboardButton(text="📤 Поделиться", url=f"https://t.me/share/url?url={referral_link}&text=Привет! Присоединяйся к обменнику MOSS PAY, получи бонус!")],
@@ -748,14 +789,7 @@ async def handle_callback(call: types.CallbackQuery):
             ])
             
             await call.message.answer(
-                f"👥 *Реферальная система*\n\n"
-                f"🔗 *Твоя ссылка:*\n`{referral_link}`\n\n"
-                f"💰 *Твой бонусный баланс:* {bonus:.2f} ₽\n\n"
-                f"💎 *Как это работает:*\n"
-                f"• Отправь ссылку другу\n"
-                f"• Друг переходит по ссылке и нажимает Start\n"
-                f"• При создании заявки ты получаешь 5% бонус\n\n"
-                f"📋 Нажми «Скопировать ссылку», затем отправь её другу.",
+                get_text(uid, 'referral_info', link=referral_link, total=stats['total'], active=stats['active'], earned=stats['earned'], balance=stats['balance'], percent=bonus_percent),
                 parse_mode="Markdown",
                 reply_markup=kb
             )
@@ -807,18 +841,6 @@ async def handle_callback(call: types.CallbackQuery):
             get_text(uid, 'order_created', id=order_id_db, type=type_text, coin=coin, amount=f"{rub:,.0f}", crypto=crypto, symbol=currency_symbol),
             reply_markup=back_menu(uid)
         )
-        
-        # Начисляем бонус рефереру (5% от суммы)
-        cur.execute("SELECT referrer_id FROM users WHERE user_id = ?", (uid,))
-        row = cur.fetchone()
-        if row and row[0]:
-            referrer_id = row[0]
-            bonus = rub * 0.05
-            add_bonus(referrer_id, bonus, f"Заявка #{order_id_db} от реферала")
-            
-            # Отмечаем реферала как выполненного
-            cur.execute("UPDATE referrals SET status = 'completed' WHERE referred_id = ?", (uid,))
-            conn.commit()
         
         username = f"@{call.from_user.username}" if call.from_user.username else "no username"
         await bot.send_message(
