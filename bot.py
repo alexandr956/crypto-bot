@@ -45,6 +45,7 @@ def keep_alive():
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# ========== ФУНКЦИЯ ДЛЯ РЕФЕРАЛЬНОЙ ССЫЛКИ ==========
 def get_referral_link_sync(user_id):
     """Синхронная версия для получения ссылки"""
     cur.execute("SELECT referral_code FROM users WHERE user_id = ?", (user_id,))
@@ -402,9 +403,8 @@ TEXTS = {
         'loading_rates': "🔄 Загружаю актуальные курсы...",
         'confirm_yes': "✅ Да, подтверждаю",
         'confirm_no': "❌ Нет, отменить",
-        'referral_info': "👥 *Реферальная система*\n\nПриглашай друзей и получай бонусы!\n\n🔗 *Твоя реферальная ссылка:*\n{link}\n\n💎 *Как это работает:*\n• Друг переходит по твоей ссылке\n• Регистрируется в боте\n• При создании заявки ты получаешь 5% бонус\n\n💰 *Твой бонусный баланс:* {bonus} ₽\n\nБонусы можно использовать для оплаты комиссии при обмене.",
-        'no_referral_code': "❌ Не удалось создать реферальную ссылку",
-        'referral_stats': "📊 *Реферальная статистика*\n\n👥 Приглашено друзей: {count}\n💰 Заработано бонусов: {earned} ₽\n💎 Текущий баланс: {balance} ₽"
+        'referral_info': "👥 *Реферальная система*\n\nПриглашай друзей и получай бонусы!\n\n🔗 *Твоя реферальная ссылка:*\n`{link}`\n\n💎 *Как это работает:*\n• Друг переходит по твоей ссылке\n• Регистрируется в боте\n• При создании заявки ты получаешь 5% бонус\n\n💰 *Твой бонусный баланс:* {bonus:.2f} ₽\n\nБонусы можно использовать для оплаты комиссии при обмене.",
+        'no_referral_code': "❌ Не удалось создать реферальную ссылку"
     },
     'en': {
         'welcome': "🏦 Welcome to MOSS PAY Crypto Exchanger",
@@ -440,9 +440,8 @@ TEXTS = {
         'loading_rates': "🔄 Loading current rates...",
         'confirm_yes': "✅ Yes, confirm",
         'confirm_no': "❌ No, cancel",
-        'referral_info': "👥 *Referral system*\n\nInvite friends and get bonuses!\n\n🔗 *Your referral link:*\n{link}\n\n💎 *How it works:*\n• Friend follows your link\n• Registers in the bot\n• When they create an order, you get 5% bonus\n\n💰 *Your bonus balance:* {bonus} RUB\n\nBonuses can be used to pay commission on exchange.",
-        'no_referral_code': "❌ Failed to create referral link",
-        'referral_stats': "📊 *Referral statistics*\n\n👥 Friends invited: {count}\n💰 Bonuses earned: {earned} RUB\n💎 Current balance: {balance} RUB"
+        'referral_info': "👥 *Referral system*\n\nInvite friends and get bonuses!\n\n🔗 *Your referral link:*\n`{link}`\n\n💎 *How it works:*\n• Friend follows your link\n• Registers in the bot\n• When they create an order, you get 5% bonus\n\n💰 *Your bonus balance:* {bonus:.2f} RUB\n\nBonuses can be used to pay commission on exchange.",
+        'no_referral_code': "❌ Failed to create referral link"
     }
 }
 
