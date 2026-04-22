@@ -8,6 +8,8 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask
 from threading import Thread
 import os
+import random
+import string
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 8177854087
@@ -46,6 +48,7 @@ dp = Dispatcher()
 # ========== БАЗА ДАННЫХ ==========
 conn = sqlite3.connect('exchange_bot.db', check_same_thread=False)
 cur = conn.cursor()
+
 cur.execute('''
     CREATE TABLE IF NOT EXISTS orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,22 +66,42 @@ cur.execute('''
         updated_at INTEGER
     )
 ''')
+
 cur.execute('''
     CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
+        username TEXT,
+        full_name TEXT,
         language TEXT DEFAULT 'ru',
-        fiat_currency TEXT DEFAULT 'RUB'
+        fiat_currency TEXT DEFAULT 'RUB',
+        referrer_id INTEGER DEFAULT NULL,
+        referral_code TEXT,
+        created_at INTEGER,
+        bonus_balance REAL DEFAULT 0
     )
 ''')
+
+cur.execute('''
+    CREATE TABLE IF NOT EXISTS referrals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        referrer_id INTEGER,
+        referred_id INTEGER,
+        created_at INTEGER,
+        status TEXT DEFAULT 'pending'
+    )
+''')
+
 cur.execute('''
     CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT
     )
 ''')
+
 # Сохраняем настройки по умолчанию
 cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('min_limit', ?)", (str(DEFAULT_MIN_LIMIT),))
 cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('max_limit', ?)", (str(DEFAULT_MAX_LIMIT),))
+cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('referral_bonus_percent', ?)", ("5",))
 
 # Сохраняем курсы для каждой валюты
 for currency, rates in DEFAULT_RATES.items():
@@ -107,15 +130,12 @@ def get_max_limit():
     return get_setting('max_limit', DEFAULT_MAX_LIMIT)
 
 def get_crypto_rate(currency, crypto):
-    """Получает курс криптовалюты для указанной фиатной валюты"""
     rate = get_setting(f"{currency}_{crypto}", 0)
     if rate == 0:
-        # Если курс не найден, берем из DEFAULT_RATES
         return DEFAULT_RATES.get(currency, DEFAULT_RATES['RUB']).get(crypto, 0)
     return rate
 
 def get_all_rates(currency):
-    """Получает все курсы для указанной валюты"""
     return {
         'usdt': get_crypto_rate(currency, 'usdt'),
         'btc': get_crypto_rate(currency, 'btc'),
@@ -139,6 +159,26 @@ def get_user_fiat(user_id):
 def set_user_fiat(user_id, currency):
     cur.execute("UPDATE users SET fiat_currency = ? WHERE user_id = ?", (currency, user_id))
     conn.commit()
+
+def generate_referral_code():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
+def get_referral_link(user_id):
+    cur.execute("SELECT referral_code FROM users WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    if row and row[0]:
+        return f"https://t.me/{bot.username}?start=ref_{row[0]}"
+    return None
+
+def add_bonus(user_id, amount, reason):
+    cur.execute("UPDATE users SET bonus_balance = bonus_balance + ? WHERE user_id = ?", (amount, user_id))
+    conn.commit()
+    
+    user_lang = get_lang(user_id)
+    if user_lang == 'ru':
+        bot.send_message(user_id, f"🎉 *Бонус начислен!*\n\n💰 Сумма: {amount:,.2f} ₽\n📝 Причина: {reason}\n\nБонусы можно использовать для оплаты комиссии при обмене.", parse_mode="Markdown")
+    else:
+        bot.send_message(user_id, f"🎉 *Bonus added!*\n\n💰 Amount: {amount:,.2f} RUB\n📝 Reason: {reason}\n\nBonuses can be used to pay commission on exchanges.", parse_mode="Markdown")
 
 pending_orders = {}
 
@@ -336,6 +376,7 @@ TEXTS = {
         'help_btn': "❓ Помощь",
         'contacts_btn': "📞 Контакты",
         'change_currency': "💱 Сменить валюту",
+        'referral_btn': "👥 Реферальная система",
         'back_btn': "🔙 Назад",
         'select_fiat': "💱 *Выберите валюту:*",
         'select_buy': "💰 Введи сумму в {currency} для покупки {coin}:\n📊 Лимиты: {min} - {max} {symbol}",
@@ -359,7 +400,10 @@ TEXTS = {
         'admin_stats_btn': "📊 Статистика",
         'loading_rates': "🔄 Загружаю актуальные курсы...",
         'confirm_yes': "✅ Да, подтверждаю",
-        'confirm_no': "❌ Нет, отменить"
+        'confirm_no': "❌ Нет, отменить",
+        'referral_info': "👥 *Реферальная система*\n\nПриглашай друзей и получай бонусы!\n\n🔗 *Твоя реферальная ссылка:*\n{link}\n\n💎 *Как это работает:*\n• Друг переходит по твоей ссылке\n• Регистрируется в боте\n• При создании заявки ты получаешь 5% бонус\n\n💰 *Твой бонусный баланс:* {bonus} ₽\n\nБонусы можно использовать для оплаты комиссии при обмене.",
+        'no_referral_code': "❌ Не удалось создать реферальную ссылку",
+        'referral_stats': "📊 *Реферальная статистика*\n\n👥 Приглашено друзей: {count}\n💰 Заработано бонусов: {earned} ₽\n💎 Текущий баланс: {balance} ₽"
     },
     'en': {
         'welcome': "🏦 Welcome to MOSS PAY Crypto Exchanger",
@@ -370,6 +414,7 @@ TEXTS = {
         'help_btn': "❓ Help",
         'contacts_btn': "📞 Contacts",
         'change_currency': "💱 Change currency",
+        'referral_btn': "👥 Referral system",
         'back_btn': "🔙 Back",
         'select_fiat': "💱 *Select currency:*",
         'select_buy': "💰 Enter amount in {currency} to buy {coin}:\n📊 Limits: {min} - {max} {symbol}",
@@ -393,7 +438,10 @@ TEXTS = {
         'admin_stats_btn': "📊 Statistics",
         'loading_rates': "🔄 Loading current rates...",
         'confirm_yes': "✅ Yes, confirm",
-        'confirm_no': "❌ No, cancel"
+        'confirm_no': "❌ No, cancel",
+        'referral_info': "👥 *Referral system*\n\nInvite friends and get bonuses!\n\n🔗 *Your referral link:*\n{link}\n\n💎 *How it works:*\n• Friend follows your link\n• Registers in the bot\n• When they create an order, you get 5% bonus\n\n💰 *Your bonus balance:* {bonus} RUB\n\nBonuses can be used to pay commission on exchange.",
+        'no_referral_code': "❌ Failed to create referral link",
+        'referral_stats': "📊 *Referral statistics*\n\n👥 Friends invited: {count}\n💰 Bonuses earned: {earned} RUB\n💎 Current balance: {balance} RUB"
     }
 }
 
@@ -420,6 +468,7 @@ def main_menu(user_id):
         [InlineKeyboardButton(text=get_text(user_id, 'help_btn'), callback_data="help")],
         [InlineKeyboardButton(text=get_text(user_id, 'contacts_btn'), callback_data="contacts")],
         [InlineKeyboardButton(text=get_text(user_id, 'change_currency'), callback_data="change_currency")],
+        [InlineKeyboardButton(text=get_text(user_id, 'referral_btn'), callback_data="referral")],
         [InlineKeyboardButton(text=get_text(user_id, 'change_lang'), callback_data="change_lang")]
     ])
 
@@ -484,8 +533,42 @@ def admin_menu():
 @dp.message(Command("start"))
 async def start(message: types.Message):
     uid = message.from_user.id
-    cur.execute("INSERT OR IGNORE INTO users (user_id, language, fiat_currency) VALUES (?, 'ru', 'RUB')", (uid,))
-    conn.commit()
+    username = message.from_user.username
+    full_name = message.from_user.full_name
+    
+    # Проверяем, есть ли реферальный код в команде
+    referrer_id = None
+    if message.text and ' ' in message.text:
+        parts = message.text.split()
+        if len(parts) > 1 and parts[1].startswith('ref_'):
+            ref_code = parts[1][4:]
+            cur.execute("SELECT user_id FROM users WHERE referral_code = ?", (ref_code,))
+            row = cur.fetchone()
+            if row:
+                referrer_id = row[0]
+    
+    # Регистрируем пользователя
+    cur.execute("SELECT user_id FROM users WHERE user_id = ?", (uid,))
+    if not cur.fetchone():
+        referral_code = generate_referral_code()
+        cur.execute('''
+            INSERT INTO users (user_id, username, full_name, language, fiat_currency, referrer_id, referral_code, created_at, bonus_balance)
+            VALUES (?, ?, ?, 'ru', 'RUB', ?, ?, ?, 0)
+        ''', (uid, username, full_name, referrer_id, referral_code, int(time.time())))
+        
+        # Если есть реферер, записываем реферала
+        if referrer_id:
+            cur.execute('''
+                INSERT INTO referrals (referrer_id, referred_id, created_at, status)
+                VALUES (?, ?, ?, 'pending')
+            ''', (referrer_id, uid, int(time.time())))
+            
+            # Начисляем бонус рефереру (5% от мин. лимита)
+            min_limit = get_min_limit()
+            bonus = min_limit * 0.05
+            add_bonus(referrer_id, bonus, "Регистрация реферала")
+        
+        conn.commit()
     
     photo_url = "https://raw.githubusercontent.com/alexandr956/crypto-bot/main/welcome.jpg"
     lang = get_lang(uid)
@@ -526,7 +609,6 @@ async def admin_panel(message: types.Message):
         return
     await message.answer(get_text(ADMIN_ID, 'admin_panel'), reply_markup=admin_menu())
 
-# ========== КОМАНДА ДЛЯ ИЗМЕНЕНИЯ КУРСОВ ==========
 @dp.message(Command("setrates"))
 async def set_rates(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -572,7 +654,6 @@ async def set_rates(message: types.Message):
     except ValueError:
         await message.answer("❌ Введи число. Пример: /setrates RUB usdt 92.50")
 
-# ========== КОМАНДА ДЛЯ ПРОВЕРКИ КУРСОВ ==========
 @dp.message(Command("rates"))
 async def show_rates_admin(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -641,6 +722,23 @@ async def handle_callback(call: types.CallbackQuery):
     uid = call.from_user.id
     data = call.data
     
+    # Реферальная система
+    if data == "referral":
+        referral_link = get_referral_link(uid)
+        if referral_link:
+            cur.execute("SELECT bonus_balance FROM users WHERE user_id = ?", (uid,))
+            row = cur.fetchone()
+            bonus = row[0] if row else 0
+            await call.message.answer(
+                get_text(uid, 'referral_info', link=referral_link, bonus=bonus),
+                parse_mode="Markdown",
+                reply_markup=main_menu(uid)
+            )
+        else:
+            await call.message.answer(get_text(uid, 'no_referral_code'), reply_markup=main_menu(uid))
+        await call.answer()
+        return
+    
     # Выбор фиатной валюты
     if data.startswith("fiat_"):
         currency = data.split("_")[1]
@@ -684,6 +782,18 @@ async def handle_callback(call: types.CallbackQuery):
             get_text(uid, 'order_created', id=order_id_db, type=type_text, coin=coin, amount=f"{rub:,.0f}", crypto=crypto, symbol=currency_symbol),
             reply_markup=back_menu(uid)
         )
+        
+        # Начисляем бонус рефереру (5% от суммы)
+        cur.execute("SELECT referrer_id FROM users WHERE user_id = ?", (uid,))
+        row = cur.fetchone()
+        if row and row[0]:
+            referrer_id = row[0]
+            bonus = rub * 0.05
+            add_bonus(referrer_id, bonus, f"Заявка #{order_id_db} от реферала")
+            
+            # Отмечаем реферала как выполненного
+            cur.execute("UPDATE referrals SET status = 'completed' WHERE referred_id = ?", (uid,))
+            conn.commit()
         
         username = f"@{call.from_user.username}" if call.from_user.username else "no username"
         await bot.send_message(
