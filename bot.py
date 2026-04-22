@@ -45,6 +45,16 @@ def keep_alive():
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# Получаем username бота (для реферальных ссылок)
+BOT_USERNAME = None
+
+async def get_bot_username():
+    global BOT_USERNAME
+    if BOT_USERNAME is None:
+        me = await bot.get_me()
+        BOT_USERNAME = me.username
+    return BOT_USERNAME
+
 # ========== БАЗА ДАННЫХ ==========
 conn = sqlite3.connect('exchange_bot.db', check_same_thread=False)
 cur = conn.cursor()
@@ -164,10 +174,11 @@ def generate_referral_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
 def get_referral_link(user_id):
+    """Получает реферальную ссылку для пользователя"""
     cur.execute("SELECT referral_code FROM users WHERE user_id = ?", (user_id,))
     row = cur.fetchone()
-    if row and row[0]:
-        return f"https://t.me/{bot.username}?start=ref_{row[0]}"
+    if row and row[0] and BOT_USERNAME:
+        return f"https://t.me/{BOT_USERNAME}?start=ref_{row[0]}"
     return None
 
 def add_bonus(user_id, amount, reason):
@@ -176,9 +187,9 @@ def add_bonus(user_id, amount, reason):
     
     user_lang = get_lang(user_id)
     if user_lang == 'ru':
-        bot.send_message(user_id, f"🎉 *Бонус начислен!*\n\n💰 Сумма: {amount:,.2f} ₽\n📝 Причина: {reason}\n\nБонусы можно использовать для оплаты комиссии при обмене.", parse_mode="Markdown")
+        asyncio.create_task(bot.send_message(user_id, f"🎉 *Бонус начислен!*\n\n💰 Сумма: {amount:,.2f} ₽\n📝 Причина: {reason}\n\nБонусы можно использовать для оплаты комиссии при обмене.", parse_mode="Markdown"))
     else:
-        bot.send_message(user_id, f"🎉 *Bonus added!*\n\n💰 Amount: {amount:,.2f} RUB\n📝 Reason: {reason}\n\nBonuses can be used to pay commission on exchanges.", parse_mode="Markdown")
+        asyncio.create_task(bot.send_message(user_id, f"🎉 *Bonus added!*\n\n💰 Amount: {amount:,.2f} RUB\n📝 Reason: {reason}\n\nBonuses can be used to pay commission on exchanges.", parse_mode="Markdown"))
 
 pending_orders = {}
 
@@ -535,6 +546,9 @@ async def start(message: types.Message):
     uid = message.from_user.id
     username = message.from_user.username
     full_name = message.from_user.full_name
+    
+    # Получаем username бота
+    await get_bot_username()
     
     # Проверяем, есть ли реферальный код в команде
     referrer_id = None
@@ -1141,9 +1155,10 @@ async def handle_amount(message: types.Message):
         )
 
 async def main():
+    await get_bot_username()
     await bot.delete_webhook(drop_pending_updates=True)
     print("✅ Webhook удален")
-    print("✅ Бот запущен")
+    print(f"✅ Бот запущен, username: {BOT_USERNAME}")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
