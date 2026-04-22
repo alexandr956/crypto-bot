@@ -17,7 +17,11 @@ ADMIN_ID = 8177854087
 # Настройки по умолчанию
 DEFAULT_MIN_LIMIT = 1000
 DEFAULT_MAX_LIMIT = 50000
-REFERRAL_BONUS_PERCENT = 1  # 1% от суммы заявки реферала
+REFERRAL_BONUS_PERCENT = 1
+
+# Режим техработ
+TECH_MODE = False
+TECH_MESSAGE = ""
 
 # Курсы для разных валют (в рублях)
 DEFAULT_RATES = {
@@ -48,7 +52,6 @@ dp = Dispatcher()
 
 # ========== КЛАВИАТУРЫ ==========
 def reply_menu(user_id):
-    """Кнопки внизу экрана (ReplyKeyboard)"""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📞 Контакты"), KeyboardButton(text="💱 Сменить валюту")],
@@ -58,7 +61,6 @@ def reply_menu(user_id):
     )
 
 def main_menu(user_id):
-    """Инлайн-кнопки в чате"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🟢 Купить", callback_data="buy")],
         [InlineKeyboardButton(text="🔴 Продать", callback_data="sell")],
@@ -460,7 +462,8 @@ TEXTS = {
         'confirm_no': "❌ Нет, отменить",
         'clear_db_success': "✅ База данных полностью очищена!\n\n- Удалены все пользователи\n- Удалены все заявки\n- Удалены все реферальные связи",
         'referral_info': "👥 *Реферальная система*\n\nПриглашай друзей и получай бонусы!\n\n🔗 *Твоя ссылка:*\n`{link}`\n\n📊 *Твоя статистика:*\n• 👥 Приглашено друзей: {total}\n• ✅ Активных рефералов: {active}\n• 💰 Всего заработано: {earned:.2f} ₽\n• 💎 Текущий баланс: {balance:.2f} ₽\n\n💎 *Как это работает:*\n• Отправь ссылку другу\n• Друг переходит по ссылке и нажимает Start\n• При выполнении заявки другом ты получаешь {percent}% бонус\n\n📋 Нажми «Скопировать ссылку», затем отправь её другу.",
-        'no_referral_code': "❌ Не удалось создать реферальную ссылку"
+        'no_referral_code': "❌ Не удалось создать реферальную ссылку",
+        'tech_notification': "🔧 *Технические работы*\n\n{message}\n\n⏰ Ориентировочное время восстановления: уточняется.\n\nПриносим извинения за временные неудобства!"
     },
     'en': {
         'welcome': "🏦 Welcome to MOSS PAY Crypto Exchanger",
@@ -498,7 +501,8 @@ TEXTS = {
         'confirm_no': "❌ No, cancel",
         'clear_db_success': "✅ Database cleared!\n\n- All users deleted\n- All orders deleted\n- All referral links deleted",
         'referral_info': "👥 *Referral system*\n\nInvite friends and get bonuses!\n\n🔗 *Your link:*\n`{link}`\n\n📊 *Your statistics:*\n• 👥 Friends invited: {total}\n• ✅ Active referrals: {active}\n• 💰 Total earned: {earned:.2f} RUB\n• 💎 Current balance: {balance:.2f} RUB\n\n💎 *How it works:*\n• Send link to friend\n• Friend follows link and presses Start\n• When friend completes an order, you get {percent}% bonus\n\n📋 Press «Copy link», then send it to your friend.",
-        'no_referral_code': "❌ Failed to create referral link"
+        'no_referral_code': "❌ Failed to create referral link",
+        'tech_notification': "🔧 *Technical maintenance*\n\n{message}\n\n⏰ Estimated recovery time: to be announced.\n\nWe apologize for the temporary inconvenience!"
     }
 }
 
@@ -566,6 +570,50 @@ def admin_menu():
         [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="main")]
     ])
+
+# ========== КОМАНДА ДЛЯ ТЕХРАБОТ ==========
+@dp.message(Command("tech"))
+async def tech_mode(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ Доступ запрещен")
+        return
+    
+    # Получаем текст сообщения после команды
+    tech_text = message.text.replace("/tech", "").strip()
+    if not tech_text:
+        await message.answer("❌ *Неверный формат*\n\nИспользуй: `/tech Текст сообщения`\n\nПример: `/tech Обновление базы данных, бот вернётся через 15 минут`", parse_mode="Markdown")
+        return
+    
+    # Получаем всех пользователей
+    cur.execute("SELECT user_id, language FROM users")
+    users = cur.fetchall()
+    
+    if not users:
+        await message.answer("❌ Нет пользователей для оповещения")
+        return
+    
+    sent_count = 0
+    error_count = 0
+    
+    # Отправляем сообщение каждому пользователю
+    for user_id, lang in users:
+        try:
+            if lang == 'ru':
+                await bot.send_message(user_id, f"🔧 *Технические работы*\n\n{tech_text}\n\n⏰ Ориентировочное время восстановления: уточняется.\n\nПриносим извинения за временные неудобства!", parse_mode="Markdown")
+            else:
+                await bot.send_message(user_id, f"🔧 *Technical maintenance*\n\n{tech_text}\n\n⏰ Estimated recovery time: to be announced.\n\nWe apologize for the temporary inconvenience!", parse_mode="Markdown")
+            sent_count += 1
+        except:
+            error_count += 1
+        await asyncio.sleep(0.05)  # Небольшая задержка, чтобы не превысить лимиты Telegram
+    
+    await message.answer(
+        f"✅ *Оповещение о техработах отправлено!*\n\n"
+        f"📨 Доставлено: {sent_count}\n"
+        f"❌ Ошибок: {error_count}\n"
+        f"📝 Текст: {tech_text}",
+        parse_mode="Markdown"
+    )
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
