@@ -403,7 +403,7 @@ TEXTS = {
         'loading_rates': "🔄 Загружаю актуальные курсы...",
         'confirm_yes': "✅ Да, подтверждаю",
         'confirm_no': "❌ Нет, отменить",
-        'referral_info': "👥 *Реферальная система*\n\nПриглашай друзей и получай бонусы!\n\n🔗 *Твоя реферальная ссылка:*\n`{link}`\n\n💎 *Как это работает:*\n• Друг переходит по твоей ссылке\n• Регистрируется в боте\n• При создании заявки ты получаешь 5% бонус\n\n💰 *Твой бонусный баланс:* {bonus:.2f} ₽\n\nБонусы можно использовать для оплаты комиссии при обмене.",
+        'referral_info': "👥 *Реферальная система*\n\nПриглашай друзей и получай бонусы!\n\n🔗 *Твоя реферальная ссылка:*\n\n💰 *Твой бонусный баланс:* {bonus:.2f} ₽\n\n💎 *Как это работает:*\n• Друг переходит по твоей ссылке\n• Регистрируется в боте\n• При создании заявки ты получаешь 5% бонус\n\nБонусы можно использовать для оплаты комиссии при обмене.",
         'no_referral_code': "❌ Не удалось создать реферальную ссылку"
     },
     'en': {
@@ -440,7 +440,7 @@ TEXTS = {
         'loading_rates': "🔄 Loading current rates...",
         'confirm_yes': "✅ Yes, confirm",
         'confirm_no': "❌ No, cancel",
-        'referral_info': "👥 *Referral system*\n\nInvite friends and get bonuses!\n\n🔗 *Your referral link:*\n`{link}`\n\n💎 *How it works:*\n• Friend follows your link\n• Registers in the bot\n• When they create an order, you get 5% bonus\n\n💰 *Your bonus balance:* {bonus:.2f} RUB\n\nBonuses can be used to pay commission on exchange.",
+        'referral_info': "👥 *Referral system*\n\nInvite friends and get bonuses!\n\n🔗 *Your referral link:*\n\n💰 *Your bonus balance:* {bonus:.2f} RUB\n\n💎 *How it works:*\n• Friend follows your link\n• Registers in the bot\n• When they create an order, you get 5% bonus\n\nBonuses can be used to pay commission on exchange.",
         'no_referral_code': "❌ Failed to create referral link"
     }
 }
@@ -722,17 +722,24 @@ async def handle_callback(call: types.CallbackQuery):
     uid = call.from_user.id
     data = call.data
     
-    # Реферальная система
+    # Реферальная система (с кликабельной кнопкой)
     if data == "referral":
         referral_link = get_referral_link_sync(uid)
         if referral_link:
             cur.execute("SELECT bonus_balance FROM users WHERE user_id = ?", (uid,))
             row = cur.fetchone()
             bonus = row[0] if row else 0
+            
+            # Кнопка с ссылкой
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔗 Получить ссылку", url=referral_link)],
+                [InlineKeyboardButton(text="🔙 Главное меню", callback_data="main")]
+            ])
+            
             await call.message.answer(
-                get_text(uid, 'referral_info', link=referral_link, bonus=bonus),
+                get_text(uid, 'referral_info', bonus=bonus),
                 parse_mode="Markdown",
-                reply_markup=main_menu(uid)
+                reply_markup=kb
             )
         else:
             await call.message.answer(get_text(uid, 'no_referral_code'), reply_markup=main_menu(uid))
