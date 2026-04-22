@@ -45,7 +45,7 @@ def keep_alive():
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Получаем username бота (для реферальных ссылок)
+# Глобальная переменная для username бота
 BOT_USERNAME = None
 
 async def get_bot_username():
@@ -54,6 +54,14 @@ async def get_bot_username():
         me = await bot.get_me()
         BOT_USERNAME = me.username
     return BOT_USERNAME
+
+def get_referral_link_sync(user_id):
+    """Синхронная версия для получения ссылки (вызывается из колбэка)"""
+    cur.execute("SELECT referral_code FROM users WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    if row and row[0] and BOT_USERNAME:
+        return f"https://t.me/{BOT_USERNAME}?start=ref_{row[0]}"
+    return None
 
 # ========== БАЗА ДАННЫХ ==========
 conn = sqlite3.connect('exchange_bot.db', check_same_thread=False)
@@ -172,14 +180,6 @@ def set_user_fiat(user_id, currency):
 
 def generate_referral_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-
-def get_referral_link(user_id):
-    """Получает реферальную ссылку для пользователя"""
-    cur.execute("SELECT referral_code FROM users WHERE user_id = ?", (user_id,))
-    row = cur.fetchone()
-    if row and row[0] and BOT_USERNAME:
-        return f"https://t.me/{BOT_USERNAME}?start=ref_{row[0]}"
-    return None
 
 def add_bonus(user_id, amount, reason):
     cur.execute("UPDATE users SET bonus_balance = bonus_balance + ? WHERE user_id = ?", (amount, user_id))
@@ -738,7 +738,11 @@ async def handle_callback(call: types.CallbackQuery):
     
     # Реферальная система
     if data == "referral":
-        referral_link = get_referral_link(uid)
+        # Убеждаемся, что BOT_USERNAME загружен
+        if BOT_USERNAME is None:
+            await get_bot_username()
+        
+        referral_link = get_referral_link_sync(uid)
         if referral_link:
             cur.execute("SELECT bonus_balance FROM users WHERE user_id = ?", (uid,))
             row = cur.fetchone()
