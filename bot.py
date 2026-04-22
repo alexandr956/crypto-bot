@@ -15,9 +15,16 @@ ADMIN_ID = 8177854087
 # Настройки по умолчанию
 DEFAULT_MIN_LIMIT = 1000
 DEFAULT_MAX_LIMIT = 50000
-DEFAULT_MARKET_USDT = 91.50
-DEFAULT_MARKET_BTC = 5500000
-DEFAULT_MARKET_ETH = 220000
+
+# Курсы для разных валют (в рублях)
+DEFAULT_RATES = {
+    'RUB': {'usdt': 91.50, 'btc': 5500000, 'eth': 220000},
+    'BYN': {'usdt': 28.50, 'btc': 1715000, 'eth': 68600},
+    'UAH': {'usdt': 37.50, 'btc': 2255000, 'eth': 90200},
+    'KZT': {'usdt': 450.00, 'btc': 27000000, 'eth': 1080000},
+    'TRY': {'usdt': 30.00, 'btc': 1800000, 'eth': 72000},
+    'AMD': {'usdt': 390.00, 'btc': 23400000, 'eth': 936000}
+}
 
 app = Flask('')
 
@@ -47,6 +54,7 @@ cur.execute('''
         full_name TEXT,
         type TEXT,
         coin TEXT,
+        fiat_currency TEXT DEFAULT 'RUB',
         amount REAL,
         crypto_amount REAL,
         status TEXT DEFAULT 'pending',
@@ -58,7 +66,8 @@ cur.execute('''
 cur.execute('''
     CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
-        language TEXT DEFAULT 'ru'
+        language TEXT DEFAULT 'ru',
+        fiat_currency TEXT DEFAULT 'RUB'
     )
 ''')
 cur.execute('''
@@ -67,11 +76,14 @@ cur.execute('''
         value TEXT
     )
 ''')
+# Сохраняем настройки по умолчанию
 cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('min_limit', ?)", (str(DEFAULT_MIN_LIMIT),))
 cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('max_limit', ?)", (str(DEFAULT_MAX_LIMIT),))
-cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('market_usdt', ?)", (str(DEFAULT_MARKET_USDT),))
-cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('market_btc', ?)", (str(DEFAULT_MARKET_BTC),))
-cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('market_eth', ?)", (str(DEFAULT_MARKET_ETH),))
+
+# Сохраняем курсы для каждой валюты
+for currency, rates in DEFAULT_RATES.items():
+    for crypto, rate in rates.items():
+        cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (f"{currency}_{crypto}", str(rate)))
 conn.commit()
 
 def get_setting(key, default):
@@ -94,23 +106,24 @@ def get_min_limit():
 def get_max_limit():
     return get_setting('max_limit', DEFAULT_MAX_LIMIT)
 
-def get_market_usdt():
-    return get_setting('market_usdt', DEFAULT_MARKET_USDT)
+def get_crypto_rate(currency, crypto):
+    """Получает курс криптовалюты для указанной фиатной валюты"""
+    rate = get_setting(f"{currency}_{crypto}", 0)
+    if rate == 0:
+        # Если курс не найден, берем из DEFAULT_RATES
+        return DEFAULT_RATES.get(currency, DEFAULT_RATES['RUB']).get(crypto, 0)
+    return rate
 
-def get_market_btc():
-    return get_setting('market_btc', DEFAULT_MARKET_BTC)
+def get_all_rates(currency):
+    """Получает все курсы для указанной валюты"""
+    return {
+        'usdt': get_crypto_rate(currency, 'usdt'),
+        'btc': get_crypto_rate(currency, 'btc'),
+        'eth': get_crypto_rate(currency, 'eth')
+    }
 
-def get_market_eth():
-    return get_setting('market_eth', DEFAULT_MARKET_ETH)
-
-def set_market_usdt(value):
-    set_setting('market_usdt', value)
-
-def set_market_btc(value):
-    set_setting('market_btc', value)
-
-def set_market_eth(value):
-    set_setting('market_eth', value)
+def set_crypto_rate(currency, crypto, value):
+    set_setting(f"{currency}_{crypto}", value)
 
 def set_min_limit(value):
     set_setting('min_limit', value)
@@ -118,29 +131,38 @@ def set_min_limit(value):
 def set_max_limit(value):
     set_setting('max_limit', value)
 
+def get_user_fiat(user_id):
+    cur.execute("SELECT fiat_currency FROM users WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    return row[0] if row else 'RUB'
+
+def set_user_fiat(user_id, currency):
+    cur.execute("UPDATE users SET fiat_currency = ? WHERE user_id = ?", (currency, user_id))
+    conn.commit()
+
 pending_orders = {}
 
 # ========== ФУНКЦИЯ ДЛЯ КУРСОВ ==========
-async def get_crypto_rates():
-    market_usdt = get_market_usdt()
-    market_btc = get_market_btc()
-    market_eth = get_market_eth()
+async def get_crypto_rates(user_id):
+    currency = get_user_fiat(user_id)
+    rates = get_all_rates(currency)
     
     commission_buy = 1.10
     commission_sell = 0.98
     
-    buy_usdt = market_usdt * commission_buy
-    buy_btc = market_btc * commission_buy
-    buy_eth = market_eth * commission_buy
-    
-    sell_usdt = market_usdt * commission_sell
-    sell_btc = market_btc * commission_sell
-    sell_eth = market_eth * commission_sell
-    
     return {
-        'market': {'usdt': market_usdt, 'btc': market_btc, 'eth': market_eth},
-        'buy': {'usdt': buy_usdt, 'btc': buy_btc, 'eth': buy_eth},
-        'sell': {'usdt': sell_usdt, 'btc': sell_btc, 'eth': sell_eth}
+        'market': rates,
+        'buy': {
+            'usdt': rates['usdt'] * commission_buy,
+            'btc': rates['btc'] * commission_buy,
+            'eth': rates['eth'] * commission_buy
+        },
+        'sell': {
+            'usdt': rates['usdt'] * commission_sell,
+            'btc': rates['btc'] * commission_sell,
+            'eth': rates['eth'] * commission_sell
+        },
+        'currency': currency
     }
 
 def calculate_crypto_amount(rub, coin, action, rates):
@@ -202,6 +224,17 @@ def get_status_text(status, lang='ru'):
     }
     return statuses[lang].get(status, status)
 
+def get_currency_symbol(currency):
+    symbols = {
+        'RUB': '₽',
+        'BYN': 'Br',
+        'UAH': '₴',
+        'KZT': '₸',
+        'TRY': '₺',
+        'AMD': '֏'
+    }
+    return symbols.get(currency, currency)
+
 def user_notification_buttons(order_id, lang='ru'):
     if lang == 'ru':
         return InlineKeyboardMarkup(inline_keyboard=[
@@ -219,6 +252,16 @@ def back_menu(user_id):
         [InlineKeyboardButton(text="🔙 Главное меню", callback_data="main")]
     ])
 
+def fiat_menu():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🇷🇺 RUB", callback_data="fiat_RUB"),
+         InlineKeyboardButton(text="🇧🇾 BYN", callback_data="fiat_BYN")],
+        [InlineKeyboardButton(text="🇺🇦 UAH", callback_data="fiat_UAH"),
+         InlineKeyboardButton(text="🇰🇿 KZT", callback_data="fiat_KZT")],
+        [InlineKeyboardButton(text="🇹🇷 TRY", callback_data="fiat_TRY"),
+         InlineKeyboardButton(text="🇦🇲 AMD", callback_data="fiat_AMD")]
+    ])
+
 def reject_reason_menu(order_id):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="❌ Недостаточно средств", callback_data=f"reject_reason_{order_id}_insufficient_funds")],
@@ -229,12 +272,12 @@ def reject_reason_menu(order_id):
     ])
 
 async def update_order_status(order_id, new_status, reject_reason=None):
-    cur.execute('SELECT user_id, type, coin, amount, crypto_amount FROM orders WHERE id = ?', (order_id,))
+    cur.execute('SELECT user_id, type, coin, fiat_currency, amount, crypto_amount FROM orders WHERE id = ?', (order_id,))
     order = cur.fetchone()
     if not order:
         return
     
-    user_id_db, o_type, coin, amount, crypto = order
+    user_id_db, o_type, coin, fiat_currency, amount, crypto = order
     
     if new_status == 'rejected' and reject_reason:
         cur.execute('UPDATE orders SET status = ?, reject_reason = ?, updated_at = ? WHERE id = ?', 
@@ -249,6 +292,7 @@ async def update_order_status(order_id, new_status, reject_reason=None):
     status_text = get_status_text(new_status, user_lang)
     type_text = "Покупка" if o_type == "buy" else "Продажа"
     updated_time = format_datetime(int(time.time()))
+    currency_symbol = get_currency_symbol(fiat_currency)
     
     if new_status == 'rejected' and reject_reason:
         reason_text = f"\n📝 Причина: {reject_reason}"
@@ -259,7 +303,7 @@ async def update_order_status(order_id, new_status, reject_reason=None):
         notification = (
             f"{status_emoji} *Статус заявки #{order_id} обновлён*\n\n"
             f"📌 {type_text} {coin}\n"
-            f"💰 Сумма: {amount:,.0f} ₽\n"
+            f"💰 Сумма: {amount:,.0f} {currency_symbol}\n"
             f"🪙 Крипта: {crypto:.8f} {coin}\n"
             f"📊 Новый статус: {status_text}{reason_text}\n"
             f"🕐 Время: {updated_time}"
@@ -268,7 +312,7 @@ async def update_order_status(order_id, new_status, reject_reason=None):
         notification = (
             f"{status_emoji} *Order #{order_id} status updated*\n\n"
             f"📌 {type_text} {coin}\n"
-            f"💰 Amount: {amount:,.0f} RUB\n"
+            f"💰 Amount: {amount:,.0f} {currency_symbol}\n"
             f"🪙 Crypto: {crypto:.8f} {coin}\n"
             f"📊 New status: {status_text}{reason_text}\n"
             f"🕐 Time: {updated_time}"
@@ -291,12 +335,14 @@ TEXTS = {
         'history_btn': "📜 История заявок",
         'help_btn': "❓ Помощь",
         'contacts_btn': "📞 Контакты",
+        'change_currency': "💱 Сменить валюту",
         'back_btn': "🔙 Назад",
-        'select_buy': "💰 Введи сумму в рублях для покупки {coin}:\n📊 Лимиты: {min} - {max} ₽",
-        'select_sell': "💰 Введи сумму в рублях для продажи {coin}:\n📊 Лимиты: {min} - {max} ₽",
-        'limit_error': "❌ Сумма должна быть от {min} до {max} ₽",
-        'confirm_order': "💰 Вы ввели: {amount} ₽\n🪙 Вы получите: {crypto:.8f} {coin}\n📊 Лимиты: {min} - {max} ₽\n\n✅ Подтвердить заявку?",
-        'order_created': "✅ Заявка #{id} создана!\n\n📌 {type} {coin}\n💰 Сумма: {amount} ₽\n🪙 Крипта: {crypto:.8f} {coin}\n📊 Статус: Ожидает обработки\n\n📞 Оператор свяжется с вами",
+        'select_fiat': "💱 *Выберите валюту:*",
+        'select_buy': "💰 Введи сумму в {currency} для покупки {coin}:\n📊 Лимиты: {min} - {max} {symbol}",
+        'select_sell': "💰 Введи сумму в {currency} для продажи {coin}:\n📊 Лимиты: {min} - {max} {symbol}",
+        'limit_error': "❌ Сумма должна быть от {min} до {max} {symbol}",
+        'confirm_order': "💰 Вы ввели: {amount} {symbol}\n🪙 Вы получите: {crypto:.8f} {coin}\n📊 Лимиты: {min} - {max} {symbol}\n\n✅ Подтвердить заявку?",
+        'order_created': "✅ Заявка #{id} создана!\n\n📌 {type} {coin}\n💰 Сумма: {amount} {symbol}\n🪙 Крипта: {crypto:.8f} {coin}\n📊 Статус: Ожидает обработки\n\n📞 Оператор свяжется с вами",
         'order_cancelled': "❌ Заявка отменена",
         'no_orders': "📭 Нет заявок",
         'orders_title': "📋 Ваши заявки:\n\n",
@@ -305,7 +351,8 @@ TEXTS = {
         'change_lang': "🌐 Сменить язык",
         'lang_selected': "✅ Язык: Русский",
         'select_lang': "🌐 Выбери язык:",
-        'help_text': "❓ Как пользоваться обменником:\n\n1️⃣ Купить криптовалюту\n   • Выбери валюту\n   • Введи сумму\n   • Подтверди заявку\n\n2️⃣ Продать криптовалюту\n   • Выбери валюту\n   • Введи сумму\n   • Подтверди заявку\n\n3️⃣ Курсы\n   • Актуальные курсы с наценкой 10% (покупка) и -2% (продажа)\n\n4️⃣ Контакты\n   • Связь с оператором: кнопка ниже\n\n⏰ Время работы: 10:00 – 22:00 МСК",
+        'currency_changed': "✅ Валюта изменена на {currency}",
+        'help_text': "❓ Как пользоваться обменником:\n\n1️⃣ Купить криптовалюту\n   • Выбери валюту\n   • Выбери криптовалюту\n   • Введи сумму\n   • Подтверди заявку\n\n2️⃣ Продать криптовалюту\n   • Выбери валюту\n   • Выбери криптовалюту\n   • Введи сумму\n   • Подтверди заявку\n\n3️⃣ Курсы\n   • Актуальные курсы с наценкой 10% (покупка) и -2% (продажа)\n\n4️⃣ Контакты\n   • Связь с оператором: кнопка ниже\n\n⏰ Время работы: 10:00 – 22:00 МСК",
         'contacts_text': "📞 Связь с оператором:\n\n• Telegram: @shakakobmen\n• WhatsApp: +7 999 123-45-67\n• Email: support@crypto-exchange.ru\n\n⏰ Время ответа: обычно в течение 5 минут",
         'admin_panel': "🔧 Панель администратора\n\nВыберите действие:",
         'admin_orders_btn': "📋 Список заявок",
@@ -322,12 +369,14 @@ TEXTS = {
         'history_btn': "📜 Order history",
         'help_btn': "❓ Help",
         'contacts_btn': "📞 Contacts",
+        'change_currency': "💱 Change currency",
         'back_btn': "🔙 Back",
-        'select_buy': "💰 Enter amount in RUB to buy {coin}:\n📊 Limits: {min} - {max} RUB",
-        'select_sell': "💰 Enter amount in RUB to sell {coin}:\n📊 Limits: {min} - {max} RUB",
-        'limit_error': "❌ Amount must be between {min} and {max} RUB",
-        'confirm_order': "💰 You entered: {amount} RUB\n🪙 You will receive: {crypto:.8f} {coin}\n📊 Limits: {min} - {max} RUB\n\n✅ Confirm order?",
-        'order_created': "✅ Order #{id} created!\n\n📌 {type} {coin}\n💰 Amount: {amount} RUB\n🪙 Crypto: {crypto:.8f} {coin}\n📊 Status: Pending\n\n📞 Operator will contact you",
+        'select_fiat': "💱 *Select currency:*",
+        'select_buy': "💰 Enter amount in {currency} to buy {coin}:\n📊 Limits: {min} - {max} {symbol}",
+        'select_sell': "💰 Enter amount in {currency} to sell {coin}:\n📊 Limits: {min} - {max} {symbol}",
+        'limit_error': "❌ Amount must be between {min} and {max} {symbol}",
+        'confirm_order': "💰 You entered: {amount} {symbol}\n🪙 You will receive: {crypto:.8f} {coin}\n📊 Limits: {min} - {max} {symbol}\n\n✅ Confirm order?",
+        'order_created': "✅ Order #{id} created!\n\n📌 {type} {coin}\n💰 Amount: {amount} {symbol}\n🪙 Crypto: {crypto:.8f} {coin}\n📊 Status: Pending\n\n📞 Operator will contact you",
         'order_cancelled': "❌ Order cancelled",
         'no_orders': "📭 No orders",
         'orders_title': "📋 Your orders:\n\n",
@@ -336,7 +385,8 @@ TEXTS = {
         'change_lang': "🌐 Change language",
         'lang_selected': "✅ Language: English",
         'select_lang': "🌐 Choose language:",
-        'help_text': "❓ How to use:\n\n1️⃣ Buy crypto\n   • Choose currency\n   • Enter amount\n   • Confirm order\n\n2️⃣ Sell crypto\n   • Choose currency\n   • Enter amount\n   • Confirm order\n\n3️⃣ Rates\n   • Current rates with 10% markup (buy) and -2% (sell)\n\n4️⃣ Contacts\n   • Contact operator: button below\n\n⏰ Working hours: 10:00 – 22:00 MSK",
+        'currency_changed': "✅ Currency changed to {currency}",
+        'help_text': "❓ How to use:\n\n1️⃣ Buy crypto\n   • Choose currency\n   • Choose crypto\n   • Enter amount\n   • Confirm order\n\n2️⃣ Sell crypto\n   • Choose currency\n   • Choose crypto\n   • Enter amount\n   • Confirm order\n\n3️⃣ Rates\n   • Current rates with 10% markup (buy) and -2% (sell)\n\n4️⃣ Contacts\n   • Contact operator: button below\n\n⏰ Working hours: 10:00 – 22:00 MSK",
         'contacts_text': "📞 Contact operator:\n\n• Telegram: @shakakobmen\n• WhatsApp: +7 999 123-45-67\n• Email: support@crypto-exchange.ru\n\n⏰ Response time: usually within 5 minutes",
         'admin_panel': "🔧 Admin panel\n\nSelect action:",
         'admin_orders_btn': "📋 Orders list",
@@ -369,6 +419,7 @@ def main_menu(user_id):
         [InlineKeyboardButton(text=get_text(user_id, 'history_btn'), callback_data="history")],
         [InlineKeyboardButton(text=get_text(user_id, 'help_btn'), callback_data="help")],
         [InlineKeyboardButton(text=get_text(user_id, 'contacts_btn'), callback_data="contacts")],
+        [InlineKeyboardButton(text=get_text(user_id, 'change_currency'), callback_data="change_currency")],
         [InlineKeyboardButton(text=get_text(user_id, 'change_lang'), callback_data="change_lang")]
     ])
 
@@ -433,7 +484,7 @@ def admin_menu():
 @dp.message(Command("start"))
 async def start(message: types.Message):
     uid = message.from_user.id
-    cur.execute("INSERT OR IGNORE INTO users (user_id, language) VALUES (?, 'ru')", (uid,))
+    cur.execute("INSERT OR IGNORE INTO users (user_id, language, fiat_currency) VALUES (?, 'ru', 'RUB')", (uid,))
     conn.commit()
     
     photo_url = "https://raw.githubusercontent.com/alexandr956/crypto-bot/main/welcome.jpg"
@@ -475,6 +526,7 @@ async def admin_panel(message: types.Message):
         return
     await message.answer(get_text(ADMIN_ID, 'admin_panel'), reply_markup=admin_menu())
 
+# ========== КОМАНДА ДЛЯ ИЗМЕНЕНИЯ КУРСОВ ==========
 @dp.message(Command("setrates"))
 async def set_rates(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -483,54 +535,59 @@ async def set_rates(message: types.Message):
     
     try:
         parts = message.text.split()
-        if len(parts) != 3:
+        if len(parts) != 4:
             await message.answer(
                 f"❌ Неверный формат\n\n"
-                f"Используй:\n"
-                f"/setrates usdt 92.50\n"
-                f"/setrates btc 5600000\n"
-                f"/setrates eth 230000\n\n"
-                f"📊 Текущие курсы:\n"
-                f"└ USDT: {get_market_usdt()} ₽\n"
-                f"└ BTC: {get_market_btc():,.0f} ₽\n"
-                f"└ ETH: {get_market_eth():,.0f} ₽"
+                f"Используй: /setrates RUB usdt 92.50\n"
+                f"/setrates RUB btc 5600000\n"
+                f"/setrates RUB eth 230000\n\n"
+                f"Доступные валюты: RUB, BYN, UAH, KZT, TRY, AMD\n"
+                f"Доступные криптовалюты: usdt, btc, eth"
             )
             return
         
-        currency = parts[1].lower()
-        new_rate = float(parts[2])
+        currency = parts[1].upper()
+        crypto = parts[2].lower()
+        new_rate = float(parts[3])
         
         if new_rate <= 0:
             await message.answer("❌ Курс должен быть положительным числом")
             return
         
-        if currency == 'usdt':
-            set_market_usdt(new_rate)
-            await message.answer(f"✅ Курс USDT обновлён!\n\nНовый курс: {new_rate:.2f} ₽")
-        elif currency == 'btc':
-            set_market_btc(new_rate)
-            await message.answer(f"✅ Курс BTC обновлён!\n\nНовый курс: {new_rate:,.0f} ₽")
-        elif currency == 'eth':
-            set_market_eth(new_rate)
-            await message.answer(f"✅ Курс ETH обновлён!\n\nНовый курс: {new_rate:,.0f} ₽")
-        else:
-            await message.answer("❌ Доступные валюты: usdt, btc, eth")
+        if currency not in ['RUB', 'BYN', 'UAH', 'KZT', 'TRY', 'AMD']:
+            await message.answer("❌ Доступные валюты: RUB, BYN, UAH, KZT, TRY, AMD")
+            return
+        
+        if crypto not in ['usdt', 'btc', 'eth']:
+            await message.answer("❌ Доступные криптовалюты: usdt, btc, eth")
+            return
+        
+        set_crypto_rate(currency, crypto, new_rate)
+        
+        await message.answer(
+            f"✅ Курс обновлён!\n\n"
+            f"📊 {currency} → {crypto.upper()}: {new_rate:,.2f}"
+        )
         
     except ValueError:
-        await message.answer("❌ Введи число. Пример: /setrates usdt 92.50")
+        await message.answer("❌ Введи число. Пример: /setrates RUB usdt 92.50")
 
+# ========== КОМАНДА ДЛЯ ПРОВЕРКИ КУРСОВ ==========
 @dp.message(Command("rates"))
 async def show_rates_admin(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("⛔ Доступ запрещен")
         return
     
-    await message.answer(
-        f"📊 Текущие рыночные курсы:\n\n"
-        f"└ USDT: {get_market_usdt():.2f} ₽\n"
-        f"└ BTC: {get_market_btc():,.0f} ₽\n"
-        f"└ ETH: {get_market_eth():,.0f} ₽"
-    )
+    text = "📊 *Текущие курсы:*\n\n"
+    for currency in ['RUB', 'BYN', 'UAH', 'KZT', 'TRY', 'AMD']:
+        rates = get_all_rates(currency)
+        text += f"*{currency}*\n"
+        text += f"└ USDT: {rates['usdt']:.2f}\n"
+        text += f"└ BTC: {rates['btc']:,.0f}\n"
+        text += f"└ ETH: {rates['eth']:,.0f}\n\n"
+    
+    await message.answer(text, parse_mode="Markdown")
 
 @dp.message(Command("setlimits"))
 async def set_limits(message: types.Message):
@@ -544,7 +601,7 @@ async def set_limits(message: types.Message):
             await message.answer(
                 f"❌ Неверный формат\n\n"
                 f"Используй: /setlimits 1000 50000\n"
-                f"Текущие лимиты: {get_min_limit()} - {get_max_limit()} ₽"
+                f"Текущие лимиты: {get_min_limit()} - {get_max_limit()}"
             )
             return
         
@@ -562,7 +619,7 @@ async def set_limits(message: types.Message):
         set_min_limit(new_min)
         set_max_limit(new_max)
         
-        await message.answer(f"✅ Лимиты обновлены!\n\n📊 Новые лимиты: {new_min} - {new_max} ₽")
+        await message.answer(f"✅ Лимиты обновлены!\n\n📊 Новые лимиты: {new_min} - {new_max}")
         
     except ValueError:
         await message.answer("❌ Введи числа. Пример: /setlimits 1000 50000")
@@ -575,14 +632,29 @@ async def show_limits_admin(message: types.Message):
     
     await message.answer(
         f"📊 Текущие лимиты:\n\n"
-        f"💰 Минимальная сумма: {get_min_limit()} ₽\n"
-        f"💰 Максимальная сумма: {get_max_limit()} ₽"
+        f"💰 Минимальная сумма: {get_min_limit()}\n"
+        f"💰 Максимальная сумма: {get_max_limit()}"
     )
 
 @dp.callback_query()
 async def handle_callback(call: types.CallbackQuery):
     uid = call.from_user.id
     data = call.data
+    
+    # Выбор фиатной валюты
+    if data.startswith("fiat_"):
+        currency = data.split("_")[1]
+        set_user_fiat(uid, currency)
+        await call.message.answer(get_text(uid, 'currency_changed', currency=currency))
+        await call.message.answer(get_text(uid, 'welcome'), reply_markup=main_menu(uid))
+        await call.answer()
+        return
+    
+    # Смена валюты из меню
+    if data == "change_currency":
+        await call.message.answer(get_text(uid, 'select_fiat'), parse_mode="Markdown", reply_markup=fiat_menu())
+        await call.answer()
+        return
     
     # Подтверждение заявки
     if data.startswith("confirm_yes_"):
@@ -596,18 +668,20 @@ async def handle_callback(call: types.CallbackQuery):
         action, coin, rub, crypto = order_data
         
         type_text = get_text(uid, 'type_buy') if action == "buy" else get_text(uid, 'type_sell')
+        fiat_currency = get_user_fiat(uid)
+        currency_symbol = get_currency_symbol(fiat_currency)
         
         cur.execute('''
-            INSERT INTO orders (user_id, username, full_name, type, coin, amount, crypto_amount, status, reject_reason, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (uid, call.from_user.username, call.from_user.full_name, action, coin, rub, crypto, 'pending', '', int(time.time()), int(time.time())))
+            INSERT INTO orders (user_id, username, full_name, type, coin, fiat_currency, amount, crypto_amount, status, reject_reason, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (uid, call.from_user.username, call.from_user.full_name, action, coin, fiat_currency, rub, crypto, 'pending', '', int(time.time()), int(time.time())))
         order_id_db = cur.lastrowid
         conn.commit()
         
         del pending_orders[order_id]
         
         await call.message.edit_text(
-            get_text(uid, 'order_created', id=order_id_db, type=type_text, coin=coin, amount=f"{rub:,.0f}", crypto=crypto),
+            get_text(uid, 'order_created', id=order_id_db, type=type_text, coin=coin, amount=f"{rub:,.0f}", crypto=crypto, symbol=currency_symbol),
             reply_markup=back_menu(uid)
         )
         
@@ -616,7 +690,7 @@ async def handle_callback(call: types.CallbackQuery):
             ADMIN_ID,
             f"🆕 НОВАЯ ЗАЯВКА #{order_id_db}\n\n"
             f"📌 {type_text} {coin}\n"
-            f"💰 Сумма: {rub:,.0f} ₽\n"
+            f"💰 Сумма: {rub:,.0f} {currency_symbol}\n"
             f"🪙 Крипта: {crypto:.8f} {coin}\n"
             f"👤 Пользователь: {call.from_user.full_name}\n"
             f"{username}\n"
@@ -672,62 +746,58 @@ async def handle_callback(call: types.CallbackQuery):
     if data == "rates":
         await call.message.answer(get_text(uid, 'loading_rates'))
         
-        rates = await get_crypto_rates()
+        rates = await get_crypto_rates(uid)
         if rates is None:
             await call.message.answer("❌ Не удалось загрузить курсы. Попробуйте позже.")
             await call.answer()
             return
 
-        market_usdt = rates['market']['usdt']
-        market_btc = rates['market']['btc']
-        market_eth = rates['market']['eth']
-        buy_usdt = rates['buy']['usdt']
-        buy_btc = rates['buy']['btc']
-        buy_eth = rates['buy']['eth']
-        sell_usdt = rates['sell']['usdt']
-        sell_btc = rates['sell']['btc']
-        sell_eth = rates['sell']['eth']
+        currency = rates['currency']
+        currency_symbol = get_currency_symbol(currency)
+        market = rates['market']
+        buy = rates['buy']
+        sell = rates['sell']
 
         if get_lang(uid) == 'ru':
             text = (
-                f"📊 Рыночные курсы:\n"
-                f"└ USDT: {market_usdt:.2f} ₽\n"
-                f"└ BTC: {market_btc:,.0f} ₽\n"
-                f"└ ETH: {market_eth:,.0f} ₽\n\n"
-                f"📈 Покупка через MOSS PAY (+10%):\n"
-                f"└ USDT: {buy_usdt:.2f} ₽\n"
-                f"└ BTC: {buy_btc:,.0f} ₽\n"
-                f"└ ETH: {buy_eth:,.0f} ₽\n\n"
-                f"📉 Продажа через MOSS PAY (-2%):\n"
-                f"└ USDT: {sell_usdt:.2f} ₽\n"
-                f"└ BTC: {sell_btc:,.0f} ₽\n"
-                f"└ ETH: {sell_eth:,.0f} ₽\n\n"
+                f"📊 *Рыночные курсы ({currency}):*\n"
+                f"└ USDT: {market['usdt']:.2f} {currency_symbol}\n"
+                f"└ BTC: {market['btc']:,.0f} {currency_symbol}\n"
+                f"└ ETH: {market['eth']:,.0f} {currency_symbol}\n\n"
+                f"📈 *Покупка через MOSS PAY (+10%):*\n"
+                f"└ USDT: {buy['usdt']:.2f} {currency_symbol}\n"
+                f"└ BTC: {buy['btc']:,.0f} {currency_symbol}\n"
+                f"└ ETH: {buy['eth']:,.0f} {currency_symbol}\n\n"
+                f"📉 *Продажа через MOSS PAY (-2%):*\n"
+                f"└ USDT: {sell['usdt']:.2f} {currency_symbol}\n"
+                f"└ BTC: {sell['btc']:,.0f} {currency_symbol}\n"
+                f"└ ETH: {sell['eth']:,.0f} {currency_symbol}\n\n"
                 f"⚙️ Комиссия MOSS PAY: покупка +10%, продажа -2%"
             )
         else:
             text = (
-                f"📊 Market rates:\n"
-                f"└ USDT: {market_usdt:.2f} RUB\n"
-                f"└ BTC: {market_btc:,.0f} RUB\n"
-                f"└ ETH: {market_eth:,.0f} RUB\n\n"
-                f"📈 Buy via MOSS PAY (+10%):\n"
-                f"└ USDT: {buy_usdt:.2f} RUB\n"
-                f"└ BTC: {buy_btc:,.0f} RUB\n"
-                f"└ ETH: {buy_eth:,.0f} RUB\n\n"
-                f"📉 Sell via MOSS PAY (-2%):\n"
-                f"└ USDT: {sell_usdt:.2f} RUB\n"
-                f"└ BTC: {sell_btc:,.0f} RUB\n"
-                f"└ ETH: {sell_eth:,.0f} RUB\n\n"
+                f"📊 *Market rates ({currency}):*\n"
+                f"└ USDT: {market['usdt']:.2f} {currency_symbol}\n"
+                f"└ BTC: {market['btc']:,.0f} {currency_symbol}\n"
+                f"└ ETH: {market['eth']:,.0f} {currency_symbol}\n\n"
+                f"📈 *Buy via MOSS PAY (+10%):*\n"
+                f"└ USDT: {buy['usdt']:.2f} {currency_symbol}\n"
+                f"└ BTC: {buy['btc']:,.0f} {currency_symbol}\n"
+                f"└ ETH: {buy['eth']:,.0f} {currency_symbol}\n\n"
+                f"📉 *Sell via MOSS PAY (-2%):*\n"
+                f"└ USDT: {sell['usdt']:.2f} {currency_symbol}\n"
+                f"└ BTC: {sell['btc']:,.0f} {currency_symbol}\n"
+                f"└ ETH: {sell['eth']:,.0f} {currency_symbol}\n\n"
                 f"⚙️ MOSS PAY fee: buy +10%, sell -2%"
             )
         
-        await call.message.answer(text, reply_markup=main_menu(uid))
+        await call.message.answer(text, parse_mode="Markdown", reply_markup=main_menu(uid))
         await call.answer()
         return
     
     # История заявок
     if data == "history":
-        cur.execute('SELECT id, type, coin, amount, status, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 10', (uid,))
+        cur.execute('SELECT id, type, coin, fiat_currency, amount, status, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 10', (uid,))
         orders = cur.fetchall()
         
         if not orders:
@@ -737,12 +807,13 @@ async def handle_callback(call: types.CallbackQuery):
         
         text = get_text(uid, 'orders_title')
         for order in orders:
-            order_id, o_type, coin, amount, status, created_at = order
+            order_id, o_type, coin, fiat_currency, amount, status, created_at = order
             type_text = "Покупка" if o_type == "buy" else "Продажа"
             status_emoji = get_status_emoji(status)
             status_text = get_status_text(status, get_lang(uid))
+            currency_symbol = get_currency_symbol(fiat_currency)
             date = time.strftime('%d.%m %H:%M', time.localtime(created_at))
-            text += f"{status_emoji} #{order_id} | {type_text} {coin}\n   💰 {amount:,.0f} ₽ | {status_text} | {date}\n\n"
+            text += f"{status_emoji} #{order_id} | {type_text} {coin}\n   💰 {amount:,.0f} {currency_symbol} | {status_text} | {date}\n\n"
         
         await call.message.answer(text, reply_markup=back_menu(uid))
         await call.answer()
@@ -765,17 +836,18 @@ async def handle_callback(call: types.CallbackQuery):
         if uid != ADMIN_ID:
             await call.answer("Доступ запрещен", show_alert=True)
             return
-        cur.execute('SELECT id, type, coin, amount, status FROM orders WHERE status != "completed" ORDER BY created_at DESC')
+        cur.execute('SELECT id, type, coin, fiat_currency, amount, status FROM orders WHERE status != "completed" ORDER BY created_at DESC')
         orders = cur.fetchall()
         if not orders:
             await call.message.answer(get_text(ADMIN_ID, 'no_orders'))
         else:
             for order in orders:
-                order_id, o_type, coin, amount, status = order
+                order_id, o_type, coin, fiat_currency, amount, status = order
                 type_text = "Покупка" if o_type == "buy" else "Продажа"
                 status_emoji = get_status_emoji(status)
                 status_text = get_status_text(status, 'ru')
-                text = f"{status_emoji} Заявка #{order_id}\n\n{type_text} {coin}\n💰 {amount:,.0f} ₽\n📊 Статус: {status_text}"
+                currency_symbol = get_currency_symbol(fiat_currency)
+                text = f"{status_emoji} Заявка #{order_id}\n\n{type_text} {coin}\n💰 {amount:,.0f} {currency_symbol}\n📊 Статус: {status_text}"
                 await call.message.answer(text, reply_markup=order_buttons(order_id, status))
         await call.answer()
         return
@@ -796,11 +868,11 @@ async def handle_callback(call: types.CallbackQuery):
         
         text = (
             f"📊 Статистика:\n\n"
-            f"🟡 Ожидают: {pending_orders_count or 0} (на {pending_sum or 0:,.0f} ₽)\n"
-            f"🔵 В обработке: {processing_orders or 0} (на {processing_sum or 0:,.0f} ₽)\n"
-            f"🟢 Выполнено: {completed_orders or 0} (на {completed_sum or 0:,.0f} ₽)\n\n"
+            f"🟡 Ожидают: {pending_orders_count or 0} (на {pending_sum or 0:,.0f})\n"
+            f"🔵 В обработке: {processing_orders or 0} (на {processing_sum or 0:,.0f})\n"
+            f"🟢 Выполнено: {completed_orders or 0} (на {completed_sum or 0:,.0f})\n\n"
             f"📦 Всего заявок: {total_orders or 0}\n"
-            f"💵 Общая сумма: {total_sum or 0:,.0f} ₽"
+            f"💵 Общая сумма: {total_sum or 0:,.0f}"
         )
         await call.message.answer(text, reply_markup=admin_menu())
         await call.answer()
@@ -827,7 +899,7 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Отклонение заявки - показываем меню выбора причины
+    # Отклонение заявки
     if data.startswith("reject_") and not data.startswith("reject_reason_"):
         if uid != ADMIN_ID:
             await call.answer("Доступ запрещен", show_alert=True)
@@ -864,14 +936,15 @@ async def handle_callback(call: types.CallbackQuery):
             await call.answer("Доступ запрещен", show_alert=True)
             return
         order_id = int(data.split("_")[3])
-        cur.execute('SELECT type, coin, amount, status FROM orders WHERE id = ?', (order_id,))
+        cur.execute('SELECT type, coin, fiat_currency, amount, status FROM orders WHERE id = ?', (order_id,))
         order = cur.fetchone()
         if order:
-            o_type, coin, amount, status = order
+            o_type, coin, fiat_currency, amount, status = order
             type_text = "Покупка" if o_type == "buy" else "Продажа"
             status_emoji = get_status_emoji(status)
             status_text = get_status_text(status, 'ru')
-            text = f"{status_emoji} Заявка #{order_id}\n\n{type_text} {coin}\n💰 {amount:,.0f} ₽\n📊 Статус: {status_text}"
+            currency_symbol = get_currency_symbol(fiat_currency)
+            text = f"{status_emoji} Заявка #{order_id}\n\n{type_text} {coin}\n💰 {amount:,.0f} {currency_symbol}\n📊 Статус: {status_text}"
             await call.message.edit_text(text, reply_markup=order_buttons(order_id, status))
         await call.answer()
         return
@@ -879,7 +952,7 @@ async def handle_callback(call: types.CallbackQuery):
     # Выбор валюты для покупки
     if data.startswith("buy_"):
         coin = data.split("_")[1]
-        rates = await get_crypto_rates()
+        rates = await get_crypto_rates(uid)
         if rates is None:
             await call.message.answer("❌ Ошибка загрузки курсов. Попробуйте позже.")
             await call.answer()
@@ -888,8 +961,10 @@ async def handle_callback(call: types.CallbackQuery):
         pending_orders[uid] = {"action": "buy", "coin": coin, "rates": rates}
         min_limit = get_min_limit()
         max_limit = get_max_limit()
+        currency = rates['currency']
+        currency_symbol = get_currency_symbol(currency)
         await call.message.answer(
-            get_text(uid, 'select_buy', coin=coin, min=min_limit, max=max_limit)
+            get_text(uid, 'select_buy', currency=currency, coin=coin, min=min_limit, max=max_limit, symbol=currency_symbol)
         )
         await call.answer()
         return
@@ -897,7 +972,7 @@ async def handle_callback(call: types.CallbackQuery):
     # Выбор валюты для продажи
     if data.startswith("sell_"):
         coin = data.split("_")[1]
-        rates = await get_crypto_rates()
+        rates = await get_crypto_rates(uid)
         if rates is None:
             await call.message.answer("❌ Ошибка загрузки курсов. Попробуйте позже.")
             await call.answer()
@@ -906,8 +981,10 @@ async def handle_callback(call: types.CallbackQuery):
         pending_orders[uid] = {"action": "sell", "coin": coin, "rates": rates}
         min_limit = get_min_limit()
         max_limit = get_max_limit()
+        currency = rates['currency']
+        currency_symbol = get_currency_symbol(currency)
         await call.message.answer(
-            get_text(uid, 'select_sell', coin=coin, min=min_limit, max=max_limit)
+            get_text(uid, 'select_sell', currency=currency, coin=coin, min=min_limit, max=max_limit, symbol=currency_symbol)
         )
         await call.answer()
         return
@@ -925,7 +1002,7 @@ async def handle_amount(message: types.Message):
         
         if rub < min_limit or rub > max_limit:
             await message.answer(
-                get_text(uid, 'limit_error', min=min_limit, max=max_limit)
+                get_text(uid, 'limit_error', min=min_limit, max=max_limit, symbol=get_currency_symbol(get_user_fiat(uid)))
             )
             return
         
@@ -939,8 +1016,10 @@ async def handle_amount(message: types.Message):
         pending_orders[order_id] = (action, coin, rub, crypto)
         del pending_orders[uid]
         
+        currency = rates['currency']
+        currency_symbol = get_currency_symbol(currency)
         await message.answer(
-            get_text(uid, 'confirm_order', amount=f"{rub:,.0f}", crypto=crypto, coin=coin, min=min_limit, max=max_limit),
+            get_text(uid, 'confirm_order', amount=f"{rub:,.0f}", crypto=crypto, coin=coin, min=min_limit, max=max_limit, symbol=currency_symbol),
             reply_markup=confirm_menu(order_id)
         )
         
@@ -948,7 +1027,7 @@ async def handle_amount(message: types.Message):
         min_limit = get_min_limit()
         max_limit = get_max_limit()
         await message.answer(
-            get_text(uid, 'limit_error', min=min_limit, max=max_limit)
+            get_text(uid, 'limit_error', min=min_limit, max=max_limit, symbol=get_currency_symbol(get_user_fiat(uid)))
         )
 
 async def main():
