@@ -606,7 +606,6 @@ async def handle_callback(call: types.CallbackQuery):
         
         del pending_orders[order_id]
         
-        # После создания заявки показываем только кнопку "Главное меню"
         await call.message.edit_text(
             get_text(uid, 'order_created', id=order_id_db, type=type_text, coin=coin, amount=f"{rub:,.0f}", crypto=crypto),
             reply_markup=back_menu(uid)
@@ -632,7 +631,6 @@ async def handle_callback(call: types.CallbackQuery):
         order_id = int(data.split("_")[2])
         if order_id in pending_orders:
             del pending_orders[order_id]
-        # После отмены заявки показываем только кнопку "Главное меню"
         await call.message.edit_text(get_text(uid, 'order_cancelled'), reply_markup=back_menu(uid))
         await call.answer()
         return
@@ -829,8 +827,8 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Отклонение заявки с выбором причины
-    if data.startswith("reject_"):
+    # Отклонение заявки - показываем меню выбора причины
+    if data.startswith("reject_") and not data.startswith("reject_reason_"):
         if uid != ADMIN_ID:
             await call.answer("Доступ запрещен", show_alert=True)
             return
