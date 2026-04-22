@@ -446,6 +446,7 @@ TEXTS = {
         'loading_rates': "🔄 Загружаю актуальные курсы...",
         'confirm_yes': "✅ Да, подтверждаю",
         'confirm_no': "❌ Нет, отменить",
+        'clear_db_success': "✅ База данных полностью очищена!\n\n- Удалены все пользователи\n- Удалены все заявки\n- Удалены все реферальные связи\n\nТеперь можно тестировать реферальную систему с чистого листа.",
         'referral_info': "👥 *Реферальная система*\n\nПриглашай друзей и получай бонусы!\n\n🔗 *Твоя ссылка:*\n`{link}`\n\n📊 *Твоя статистика:*\n• 👥 Приглашено друзей: {total}\n• ✅ Активных рефералов: {active}\n• 💰 Всего заработано: {earned:.2f} ₽\n• 💎 Текущий баланс: {balance:.2f} ₽\n\n💎 *Как это работает:*\n• Отправь ссылку другу\n• Друг переходит по ссылке и нажимает Start\n• При выполнении заявки другом ты получаешь {percent}% бонус\n\n📋 Нажми «Скопировать ссылку», затем отправь её другу.",
         'no_referral_code': "❌ Не удалось создать реферальную ссылку"
     },
@@ -483,6 +484,7 @@ TEXTS = {
         'loading_rates': "🔄 Loading current rates...",
         'confirm_yes': "✅ Yes, confirm",
         'confirm_no': "❌ No, cancel",
+        'clear_db_success': "✅ Database cleared!\n\n- All users deleted\n- All orders deleted\n- All referral links deleted\n\nNow you can test the referral system from scratch.",
         'referral_info': "👥 *Referral system*\n\nInvite friends and get bonuses!\n\n🔗 *Your link:*\n`{link}`\n\n📊 *Your statistics:*\n• 👥 Friends invited: {total}\n• ✅ Active referrals: {active}\n• 💰 Total earned: {earned:.2f} RUB\n• 💎 Current balance: {balance:.2f} RUB\n\n💎 *How it works:*\n• Send link to friend\n• Friend follows link and presses Start\n• When friend completes an order, you get {percent}% bonus\n\n📋 Press «Copy link», then send it to your friend.",
         'no_referral_code': "❌ Failed to create referral link"
     }
@@ -640,6 +642,22 @@ async def start(message: types.Message):
         await message.answer_photo(photo_url, caption=welcome_text, reply_markup=main_menu(uid))
     except:
         await message.answer(welcome_text, reply_markup=main_menu(uid))
+
+# ========== КОМАНДА ДЛЯ ОЧИСТКИ БАЗЫ ДАННЫХ ==========
+@dp.message(Command("clear_db"))
+async def clear_db(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ Доступ запрещен")
+        return
+    
+    try:
+        cur.execute("DELETE FROM users")
+        cur.execute("DELETE FROM orders")
+        cur.execute("DELETE FROM referrals")
+        conn.commit()
+        await message.answer(get_text(ADMIN_ID, 'clear_db_success'), parse_mode="Markdown")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка при очистке базы данных: {e}")
 
 @dp.message(Command("admin"))
 async def admin_panel(message: types.Message):
