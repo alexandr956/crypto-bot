@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from flask import Flask
 from threading import Thread
 import os
@@ -46,9 +46,29 @@ def keep_alive():
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# ========== КЛАВИАТУРЫ ==========
+def reply_menu(user_id):
+    """Кнопки внизу экрана (ReplyKeyboard)"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📞 Контакты"), KeyboardButton(text="💱 Сменить валюту")],
+            [KeyboardButton(text="👥 Реферальная система"), KeyboardButton(text="🌐 Сменить язык")]
+        ],
+        resize_keyboard=True
+    )
+
+def main_menu(user_id):
+    """Инлайн-кнопки в чате"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🟢 Купить", callback_data="buy")],
+        [InlineKeyboardButton(text="🔴 Продать", callback_data="sell")],
+        [InlineKeyboardButton(text="📊 Курсы", callback_data="rates")],
+        [InlineKeyboardButton(text="📜 История заявок", callback_data="history")],
+        [InlineKeyboardButton(text="❓ Помощь", callback_data="help")]
+    ])
+
 # ========== ФУНКЦИЯ ДЛЯ РЕФЕРАЛЬНОЙ ССЫЛКИ ==========
 def get_referral_link_sync(user_id):
-    """Синхронная версия для получения ссылки"""
     cur.execute("SELECT referral_code FROM users WHERE user_id = ?", (user_id,))
     row = cur.fetchone()
     if row and row[0]:
@@ -109,12 +129,10 @@ cur.execute('''
     )
 ''')
 
-# Сохраняем настройки по умолчанию
 cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('min_limit', ?)", (str(DEFAULT_MIN_LIMIT),))
 cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('max_limit', ?)", (str(DEFAULT_MAX_LIMIT),))
 cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('referral_bonus_percent', ?)", (str(REFERRAL_BONUS_PERCENT),))
 
-# Сохраняем курсы для каждой валюты
 for currency, rates in DEFAULT_RATES.items():
     for crypto, rate in rates.items():
         cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (f"{currency}_{crypto}", str(rate)))
@@ -175,7 +193,6 @@ def generate_referral_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
 def add_bonus(user_id, amount, reason):
-    """Начисляет бонус пользователю и обновляет общий заработок"""
     cur.execute("UPDATE users SET bonus_balance = bonus_balance + ?, total_earned = total_earned + ? WHERE user_id = ?", (amount, amount, user_id))
     conn.commit()
     
@@ -186,7 +203,6 @@ def add_bonus(user_id, amount, reason):
         asyncio.create_task(bot.send_message(user_id, f"🎉 *Bonus added!*\n\n💰 Amount: {amount:,.2f} RUB\n📝 Reason: {reason}\n\nBonuses can be used to pay commission on exchanges.", parse_mode="Markdown"))
 
 def get_referral_stats(user_id):
-    """Возвращает статистику по рефералам"""
     cur.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id = ?", (user_id,))
     total_referrals = cur.fetchone()[0] or 0
     
@@ -393,20 +409,16 @@ async def update_order_status(order_id, new_status, reject_reason=None):
         reply_markup=user_notification_buttons(order_id, user_lang)
     )
     
-    # Если заявка выполнена, начисляем бонус рефереру
     if new_status == 'completed':
         bonus_percent = get_setting('referral_bonus_percent', 1)
         bonus = amount * (bonus_percent / 100)
         
         if bonus > 0:
-            # Находим реферера (кто пригласил этого пользователя)
             cur.execute("SELECT referrer_id FROM users WHERE user_id = ?", (user_id_db,))
             row = cur.fetchone()
             if row and row[0]:
                 referrer_id = row[0]
                 add_bonus(referrer_id, bonus, f"Заявка #{order_id} от реферала ({bonus_percent}%)")
-                
-                # Отмечаем реферала как выполненного
                 cur.execute("UPDATE referrals SET status = 'completed' WHERE referred_id = ?", (user_id_db,))
                 conn.commit()
 
@@ -422,6 +434,7 @@ TEXTS = {
         'contacts_btn': "📞 Контакты",
         'change_currency': "💱 Сменить валюту",
         'referral_btn': "👥 Реферальная система",
+        'change_lang_btn': "🌐 Сменить язык",
         'back_btn': "🔙 Назад",
         'select_fiat': "💱 *Выберите валюту:*",
         'select_buy': "💰 Введи сумму в {currency} для покупки {coin}:\n📊 Лимиты: {min} - {max} {symbol}",
@@ -434,19 +447,18 @@ TEXTS = {
         'orders_title': "📋 Ваши заявки:\n\n",
         'type_buy': "Покупка",
         'type_sell': "Продажа",
-        'change_lang': "🌐 Сменить язык",
         'lang_selected': "✅ Язык: Русский",
         'select_lang': "🌐 Выбери язык:",
         'currency_changed': "✅ Валюта изменена на {currency}",
-        'help_text': "❓ Как пользоваться обменником:\n\n1️⃣ Купить криптовалюту\n   • Выбери валюту\n   • Выбери криптовалюту\n   • Введи сумму\n   • Подтверди заявку\n\n2️⃣ Продать криптовалюту\n   • Выбери валюту\n   • Выбери криптовалюту\n   • Введи сумму\n   • Подтверди заявку\n\n3️⃣ Курсы\n   • Актуальные курсы с наценкой 10% (покупка) и -2% (продажа)\n\n4️⃣ Контакты\n   • Связь с оператором: кнопка ниже\n\n⏰ Время работы: 10:00 – 22:00 МСК",
-        'contacts_text': "📞 Связь с оператором:\n\n• Telegram: @shakakobmen\n• WhatsApp: +7 999 123-45-67\n• Email: support@crypto-exchange.ru\n\n⏰ Время ответа: обычно в течение 5 минут",
+        'help_text': "❓ *Как пользоваться обменником:*\n\n1️⃣ *Купить криптовалюту*\n   • Выбери валюту\n   • Выбери криптовалюту\n   • Введи сумму\n   • Подтверди заявку\n\n2️⃣ *Продать криптовалюту*\n   • Выбери валюту\n   • Выбери криптовалюту\n   • Введи сумму\n   • Подтверди заявку\n\n3️⃣ *Курсы*\n   • Актуальные курсы с наценкой 10% (покупка) и -2% (продажа)\n\n4️⃣ *Контакты*\n   • Связь с оператором: @shakakobmen\n\n⏰ *Время работы:* 10:00 – 22:00 МСК\n\n💎 *Бонусы:* приглашай друзей и получай 1% от их заявок",
+        'contacts_text': "📞 *Связь с оператором:*\n\n• Telegram: @shakakobmen\n• WhatsApp: +7 999 123-45-67\n• Email: support@crypto-exchange.ru\n\n⏰ *Время ответа:* обычно в течение 5 минут",
         'admin_panel': "🔧 Панель администратора\n\nВыберите действие:",
         'admin_orders_btn': "📋 Список заявок",
         'admin_stats_btn': "📊 Статистика",
         'loading_rates': "🔄 Загружаю актуальные курсы...",
         'confirm_yes': "✅ Да, подтверждаю",
         'confirm_no': "❌ Нет, отменить",
-        'clear_db_success': "✅ База данных полностью очищена!\n\n- Удалены все пользователи\n- Удалены все заявки\n- Удалены все реферальные связи\n\nТеперь можно тестировать реферальную систему с чистого листа.",
+        'clear_db_success': "✅ База данных полностью очищена!\n\n- Удалены все пользователи\n- Удалены все заявки\n- Удалены все реферальные связи",
         'referral_info': "👥 *Реферальная система*\n\nПриглашай друзей и получай бонусы!\n\n🔗 *Твоя ссылка:*\n`{link}`\n\n📊 *Твоя статистика:*\n• 👥 Приглашено друзей: {total}\n• ✅ Активных рефералов: {active}\n• 💰 Всего заработано: {earned:.2f} ₽\n• 💎 Текущий баланс: {balance:.2f} ₽\n\n💎 *Как это работает:*\n• Отправь ссылку другу\n• Друг переходит по ссылке и нажимает Start\n• При выполнении заявки другом ты получаешь {percent}% бонус\n\n📋 Нажми «Скопировать ссылку», затем отправь её другу.",
         'no_referral_code': "❌ Не удалось создать реферальную ссылку"
     },
@@ -460,6 +472,7 @@ TEXTS = {
         'contacts_btn': "📞 Contacts",
         'change_currency': "💱 Change currency",
         'referral_btn': "👥 Referral system",
+        'change_lang_btn': "🌐 Change language",
         'back_btn': "🔙 Back",
         'select_fiat': "💱 *Select currency:*",
         'select_buy': "💰 Enter amount in {currency} to buy {coin}:\n📊 Limits: {min} - {max} {symbol}",
@@ -472,19 +485,18 @@ TEXTS = {
         'orders_title': "📋 Your orders:\n\n",
         'type_buy': "Purchase",
         'type_sell': "Sale",
-        'change_lang': "🌐 Change language",
         'lang_selected': "✅ Language: English",
         'select_lang': "🌐 Choose language:",
         'currency_changed': "✅ Currency changed to {currency}",
-        'help_text': "❓ How to use:\n\n1️⃣ Buy crypto\n   • Choose currency\n   • Choose crypto\n   • Enter amount\n   • Confirm order\n\n2️⃣ Sell crypto\n   • Choose currency\n   • Choose crypto\n   • Enter amount\n   • Confirm order\n\n3️⃣ Rates\n   • Current rates with 10% markup (buy) and -2% (sell)\n\n4️⃣ Contacts\n   • Contact operator: button below\n\n⏰ Working hours: 10:00 – 22:00 MSK",
-        'contacts_text': "📞 Contact operator:\n\n• Telegram: @shakakobmen\n• WhatsApp: +7 999 123-45-67\n• Email: support@crypto-exchange.ru\n\n⏰ Response time: usually within 5 minutes",
+        'help_text': "❓ *How to use:*\n\n1️⃣ *Buy crypto*\n   • Choose currency\n   • Choose crypto\n   • Enter amount\n   • Confirm order\n\n2️⃣ *Sell crypto*\n   • Choose currency\n   • Choose crypto\n   • Enter amount\n   • Confirm order\n\n3️⃣ *Rates*\n   • Current rates with 10% markup (buy) and -2% (sell)\n\n4️⃣ *Contacts*\n   • Contact operator: @shakakobmen\n\n⏰ *Working hours:* 10:00 – 22:00 MSK\n\n💎 *Bonuses:* invite friends and get 1% from their orders",
+        'contacts_text': "📞 *Contact operator:*\n\n• Telegram: @shakakobmen\n• WhatsApp: +7 999 123-45-67\n• Email: support@crypto-exchange.ru\n\n⏰ *Response time:* usually within 5 minutes",
         'admin_panel': "🔧 Admin panel\n\nSelect action:",
         'admin_orders_btn': "📋 Orders list",
         'admin_stats_btn': "📊 Statistics",
         'loading_rates': "🔄 Loading current rates...",
         'confirm_yes': "✅ Yes, confirm",
         'confirm_no': "❌ No, cancel",
-        'clear_db_success': "✅ Database cleared!\n\n- All users deleted\n- All orders deleted\n- All referral links deleted\n\nNow you can test the referral system from scratch.",
+        'clear_db_success': "✅ Database cleared!\n\n- All users deleted\n- All orders deleted\n- All referral links deleted",
         'referral_info': "👥 *Referral system*\n\nInvite friends and get bonuses!\n\n🔗 *Your link:*\n`{link}`\n\n📊 *Your statistics:*\n• 👥 Friends invited: {total}\n• ✅ Active referrals: {active}\n• 💰 Total earned: {earned:.2f} RUB\n• 💎 Current balance: {balance:.2f} RUB\n\n💎 *How it works:*\n• Send link to friend\n• Friend follows link and presses Start\n• When friend completes an order, you get {percent}% bonus\n\n📋 Press «Copy link», then send it to your friend.",
         'no_referral_code': "❌ Failed to create referral link"
     }
@@ -504,26 +516,13 @@ def get_lang(user_id):
     row = cur.fetchone()
     return row[0] if row else 'ru'
 
-def main_menu(user_id):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=get_text(user_id, 'buy_btn'), callback_data="buy")],
-        [InlineKeyboardButton(text=get_text(user_id, 'sell_btn'), callback_data="sell")],
-        [InlineKeyboardButton(text=get_text(user_id, 'rates_btn'), callback_data="rates")],
-        [InlineKeyboardButton(text=get_text(user_id, 'history_btn'), callback_data="history")],
-        [InlineKeyboardButton(text=get_text(user_id, 'help_btn'), callback_data="help")],
-        [InlineKeyboardButton(text=get_text(user_id, 'contacts_btn'), callback_data="contacts")],
-        [InlineKeyboardButton(text=get_text(user_id, 'change_currency'), callback_data="change_currency")],
-        [InlineKeyboardButton(text=get_text(user_id, 'referral_btn'), callback_data="referral")],
-        [InlineKeyboardButton(text=get_text(user_id, 'change_lang'), callback_data="change_lang")]
-    ])
-
 def buy_menu(user_id):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💰 USDT", callback_data="buy_USDT")],
         [InlineKeyboardButton(text="₿ BTC", callback_data="buy_BTC")],
         [InlineKeyboardButton(text="💎 ETH", callback_data="buy_ETH")],
         [InlineKeyboardButton(text="💳 RapiraRUB", callback_data="buy_Rapira")],
-        [InlineKeyboardButton(text=get_text(user_id, 'back_btn'), callback_data="main")]
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="main")]
     ])
 
 def sell_menu(user_id):
@@ -532,7 +531,7 @@ def sell_menu(user_id):
         [InlineKeyboardButton(text="₿ BTC", callback_data="sell_BTC")],
         [InlineKeyboardButton(text="💎 ETH", callback_data="sell_ETH")],
         [InlineKeyboardButton(text="💳 RapiraRUB", callback_data="sell_Rapira")],
-        [InlineKeyboardButton(text=get_text(user_id, 'back_btn'), callback_data="main")]
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="main")]
     ])
 
 def confirm_menu(order_id):
@@ -561,13 +560,6 @@ def lang_menu():
         [InlineKeyboardButton(text="🇬🇧 English", callback_data="lang_en")]
     ])
 
-def contacts_menu(user_id):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📩 Написать оператору", url="https://t.me/shakakobmen")],
-        [InlineKeyboardButton(text="📞 WhatsApp", url="https://wa.me/79991234567")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="main")]
-    ])
-
 def admin_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📋 Список заявок", callback_data="admin_orders")],
@@ -581,7 +573,6 @@ async def start(message: types.Message):
     username = message.from_user.username
     full_name = message.from_user.full_name
     
-    # Проверяем, есть ли реферальный код в команде
     referrer_id = None
     if message.text and ' ' in message.text:
         parts = message.text.split()
@@ -592,7 +583,6 @@ async def start(message: types.Message):
             if row:
                 referrer_id = row[0]
     
-    # Регистрируем пользователя
     cur.execute("SELECT user_id FROM users WHERE user_id = ?", (uid,))
     if not cur.fetchone():
         referral_code = generate_referral_code()
@@ -601,7 +591,6 @@ async def start(message: types.Message):
             VALUES (?, ?, ?, 'ru', 'RUB', ?, ?, ?, 0, 0)
         ''', (uid, username, full_name, referrer_id, referral_code, int(time.time())))
         
-        # Если есть реферер, записываем реферала
         if referrer_id:
             cur.execute('''
                 INSERT INTO referrals (referrer_id, referred_id, created_at, status)
@@ -617,33 +606,34 @@ async def start(message: types.Message):
         welcome_text = (
             f"👋 Привет, {message.from_user.first_name}!\n\n"
             f"🏦 Добро пожаловать в КриптоОбменник MOSS PAY\n\n"
-            f"💎 Почему выбирают нас:\n"
+            f"💎 *Почему выбирают нас:*\n"
             f"• 🚀 Мгновенные заявки\n"
             f"• 🔒 Безопасные сделки\n"
             f"• 💬 Поддержка 24/7\n"
             f"• 💰 Лучшие курсы\n"
-            f"• 🔑 Обмен без KYC (верификации)\n\n"
-            f"👇 Выберите действие в меню ниже"
+            f"• 🔑 Обмен без KYC\n\n"
+            f"👇 *Выберите действие в меню ниже*"
         )
     else:
         welcome_text = (
             f"👋 Hi {message.from_user.first_name}!\n\n"
             f"🏦 Welcome to MOSS PAY Crypto Exchanger\n\n"
-            f"💎 Why choose us:\n"
+            f"💎 *Why choose us:*\n"
             f"• 🚀 Instant orders\n"
             f"• 🔒 Secure transactions\n"
             f"• 💬 24/7 support\n"
             f"• 💰 Best rates\n"
-            f"• 🔑 Exchange without KYC (verification)\n\n"
-            f"👇 Select an action below"
+            f"• 🔑 No KYC\n\n"
+            f"👇 *Select an action below*"
         )
     
     try:
         await message.answer_photo(photo_url, caption=welcome_text, reply_markup=main_menu(uid))
+        await message.answer("🔽 *Дополнительные опции:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
     except:
         await message.answer(welcome_text, reply_markup=main_menu(uid))
+        await message.answer("🔽 *Additional options:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
 
-# ========== КОМАНДА ДЛЯ ОЧИСТКИ БАЗЫ ДАННЫХ ==========
 @dp.message(Command("clear_db"))
 async def clear_db(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -657,13 +647,51 @@ async def clear_db(message: types.Message):
         conn.commit()
         await message.answer(get_text(ADMIN_ID, 'clear_db_success'), parse_mode="Markdown")
     except Exception as e:
-        await message.answer(f"❌ Ошибка при очистке базы данных: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
 
 @dp.message(Command("admin"))
 async def admin_panel(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
     await message.answer(get_text(ADMIN_ID, 'admin_panel'), reply_markup=admin_menu())
+
+# ========== ОБРАБОТКА REPLY-КНОПОК ==========
+@dp.message(F.text == "📞 Контакты")
+async def contacts_reply(message: types.Message):
+    uid = message.from_user.id
+    await message.answer(get_text(uid, 'contacts_text'), parse_mode="Markdown", reply_markup=reply_menu(uid))
+
+@dp.message(F.text == "💱 Сменить валюту")
+async def change_currency_reply(message: types.Message):
+    uid = message.from_user.id
+    await message.answer(get_text(uid, 'select_fiat'), parse_mode="Markdown", reply_markup=fiat_menu())
+
+@dp.message(F.text == "👥 Реферальная система")
+async def referral_reply(message: types.Message):
+    uid = message.from_user.id
+    referral_link = get_referral_link_sync(uid)
+    if referral_link:
+        stats = get_referral_stats(uid)
+        bonus_percent = get_setting('referral_bonus_percent', 1)
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📋 Скопировать ссылку", callback_data=f"copy_link_{uid}")],
+            [InlineKeyboardButton(text="📤 Поделиться", url=f"https://t.me/share/url?url={referral_link}&text=Привет! Присоединяйся к обменнику MOSS PAY, получи бонус!")],
+            [InlineKeyboardButton(text="🔙 Главное меню", callback_data="main")]
+        ])
+        
+        await message.answer(
+            get_text(uid, 'referral_info', link=referral_link, total=stats['total'], active=stats['active'], earned=stats['earned'], balance=stats['balance'], percent=bonus_percent),
+            parse_mode="Markdown",
+            reply_markup=kb
+        )
+    else:
+        await message.answer(get_text(uid, 'no_referral_code'), reply_markup=reply_menu(uid))
+
+@dp.message(F.text == "🌐 Сменить язык")
+async def change_lang_reply(message: types.Message):
+    uid = message.from_user.id
+    await message.answer(get_text(uid, 'select_lang'), parse_mode="Markdown", reply_markup=lang_menu())
 
 @dp.message(Command("setrates"))
 async def set_rates(message: types.Message):
@@ -792,27 +820,13 @@ async def handle_callback(call: types.CallbackQuery):
             await call.answer("Доступ запрещен", show_alert=True)
         return
     
-    # Реферальная система
-    if data == "referral":
-        referral_link = get_referral_link_sync(uid)
-        if referral_link:
-            stats = get_referral_stats(uid)
-            bonus_percent = get_setting('referral_bonus_percent', 1)
-            
-            # Кнопки: скопировать и поделиться
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="📋 Скопировать ссылку", callback_data=f"copy_link_{uid}")],
-                [InlineKeyboardButton(text="📤 Поделиться", url=f"https://t.me/share/url?url={referral_link}&text=Привет! Присоединяйся к обменнику MOSS PAY, получи бонус!")],
-                [InlineKeyboardButton(text="🔙 Главное меню", callback_data="main")]
-            ])
-            
-            await call.message.answer(
-                get_text(uid, 'referral_info', link=referral_link, total=stats['total'], active=stats['active'], earned=stats['earned'], balance=stats['balance'], percent=bonus_percent),
-                parse_mode="Markdown",
-                reply_markup=kb
-            )
-        else:
-            await call.message.answer(get_text(uid, 'no_referral_code'), reply_markup=main_menu(uid))
+    # Смена языка
+    if data.startswith("lang_"):
+        lang = 'ru' if data == "lang_ru" else 'en'
+        cur.execute("UPDATE users SET language = ? WHERE user_id = ?", (lang, uid))
+        conn.commit()
+        await call.message.edit_reply_markup(reply_markup=main_menu(uid))
+        await call.message.answer(get_text(uid, 'lang_selected'))
         await call.answer()
         return
     
@@ -822,80 +836,6 @@ async def handle_callback(call: types.CallbackQuery):
         set_user_fiat(uid, currency)
         await call.message.answer(get_text(uid, 'currency_changed', currency=currency))
         await call.message.answer(get_text(uid, 'welcome'), reply_markup=main_menu(uid))
-        await call.answer()
-        return
-    
-    # Смена валюты из меню
-    if data == "change_currency":
-        await call.message.answer(get_text(uid, 'select_fiat'), parse_mode="Markdown", reply_markup=fiat_menu())
-        await call.answer()
-        return
-    
-    # Подтверждение заявки
-    if data.startswith("confirm_yes_"):
-        order_id = int(data.split("_")[2])
-        if order_id not in pending_orders:
-            await call.message.edit_text("❌ Заявка не найдена", reply_markup=main_menu(uid))
-            await call.answer()
-            return
-        
-        order_data = pending_orders[order_id]
-        action, coin, rub, crypto = order_data
-        
-        type_text = get_text(uid, 'type_buy') if action == "buy" else get_text(uid, 'type_sell')
-        fiat_currency = get_user_fiat(uid)
-        currency_symbol = get_currency_symbol(fiat_currency)
-        
-        cur.execute('''
-            INSERT INTO orders (user_id, username, full_name, type, coin, fiat_currency, amount, crypto_amount, status, reject_reason, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (uid, call.from_user.username, call.from_user.full_name, action, coin, fiat_currency, rub, crypto, 'pending', '', int(time.time()), int(time.time())))
-        order_id_db = cur.lastrowid
-        conn.commit()
-        
-        del pending_orders[order_id]
-        
-        await call.message.edit_text(
-            get_text(uid, 'order_created', id=order_id_db, type=type_text, coin=coin, amount=f"{rub:,.0f}", crypto=crypto, symbol=currency_symbol),
-            reply_markup=back_menu(uid)
-        )
-        
-        username = f"@{call.from_user.username}" if call.from_user.username else "no username"
-        await bot.send_message(
-            ADMIN_ID,
-            f"🆕 НОВАЯ ЗАЯВКА #{order_id_db}\n\n"
-            f"📌 {type_text} {coin}\n"
-            f"💰 Сумма: {rub:,.0f} {currency_symbol}\n"
-            f"🪙 Крипта: {crypto:.8f} {coin}\n"
-            f"👤 Пользователь: {call.from_user.full_name}\n"
-            f"{username}\n"
-            f"🆔 ID: {uid}\n"
-            f"📊 Статус: Ожидает",
-            reply_markup=order_buttons(order_id_db, 'pending')
-        )
-        await call.answer()
-        return
-    
-    if data.startswith("confirm_no_"):
-        order_id = int(data.split("_")[2])
-        if order_id in pending_orders:
-            del pending_orders[order_id]
-        await call.message.edit_text(get_text(uid, 'order_cancelled'), reply_markup=back_menu(uid))
-        await call.answer()
-        return
-    
-    # Смена языка
-    if data == "change_lang":
-        await call.message.edit_reply_markup(reply_markup=lang_menu())
-        await call.answer()
-        return
-    
-    if data.startswith("lang_"):
-        lang = 'ru' if data == "lang_ru" else 'en'
-        cur.execute("UPDATE users SET language = ? WHERE user_id = ?", (lang, uid))
-        conn.commit()
-        await call.message.edit_reply_markup(reply_markup=main_menu(uid))
-        await call.message.answer(get_text(uid, 'lang_selected'))
         await call.answer()
         return
     
@@ -976,7 +916,7 @@ async def handle_callback(call: types.CallbackQuery):
         orders = cur.fetchall()
         
         if not orders:
-            await call.message.answer(get_text(uid, 'no_orders'), reply_markup=back_menu(uid))
+            await call.message.answer(get_text(uid, 'no_orders'), reply_markup=main_menu(uid))
             await call.answer()
             return
         
@@ -990,19 +930,13 @@ async def handle_callback(call: types.CallbackQuery):
             date = time.strftime('%d.%m %H:%M', time.localtime(created_at))
             text += f"{status_emoji} #{order_id} | {type_text} {coin}\n   💰 {amount:,.0f} {currency_symbol} | {status_text} | {date}\n\n"
         
-        await call.message.answer(text, reply_markup=back_menu(uid))
+        await call.message.answer(text, parse_mode="Markdown", reply_markup=main_menu(uid))
         await call.answer()
         return
     
     # Помощь
     if data == "help":
-        await call.message.answer(get_text(uid, 'help_text'), reply_markup=main_menu(uid))
-        await call.answer()
-        return
-    
-    # Контакты
-    if data == "contacts":
-        await call.message.answer(get_text(uid, 'contacts_text'), reply_markup=contacts_menu(uid))
+        await call.message.answer(get_text(uid, 'help_text'), parse_mode="Markdown", reply_markup=main_menu(uid))
         await call.answer()
         return
     
