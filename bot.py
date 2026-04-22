@@ -171,11 +171,9 @@ def calculate_crypto_amount(rub, coin, action, rates):
     return crypto
 
 def format_datetime(timestamp):
-    """Форматирует timestamp в читаемую дату и время"""
     return datetime.fromtimestamp(timestamp).strftime('%d.%m.%Y %H:%M')
 
 def get_status_emoji(status):
-    """Возвращает эмодзи для статуса"""
     emojis = {
         'pending': '🟡',
         'processing': '🔵',
@@ -186,7 +184,6 @@ def get_status_emoji(status):
     return emojis.get(status, '⚪')
 
 def get_status_text(status, lang='ru'):
-    """Возвращает текст статуса на нужном языке"""
     statuses = {
         'ru': {
             'pending': 'Ожидает обработки',
@@ -206,7 +203,6 @@ def get_status_text(status, lang='ru'):
     return statuses[lang].get(status, status)
 
 def user_notification_buttons(order_id, lang='ru'):
-    """Кнопки для уведомления клиента"""
     if lang == 'ru':
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📞 Написать оператору", url="https://t.me/shakakobmen")],
@@ -218,8 +214,12 @@ def user_notification_buttons(order_id, lang='ru'):
             [InlineKeyboardButton(text="📜 My orders", callback_data="history")]
         ])
 
+def back_menu(user_id):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Главное меню", callback_data="main")]
+    ])
+
 def reject_reason_menu(order_id):
-    """Кнопки для выбора причины отклонения"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="❌ Недостаточно средств", callback_data=f"reject_reason_{order_id}_insufficient_funds")],
         [InlineKeyboardButton(text="❌ Неверный курс", callback_data=f"reject_reason_{order_id}_wrong_rate")],
@@ -229,7 +229,6 @@ def reject_reason_menu(order_id):
     ])
 
 async def update_order_status(order_id, new_status, reject_reason=None):
-    """Обновляет статус заявки и уведомляет клиента"""
     cur.execute('SELECT user_id, type, coin, amount, crypto_amount FROM orders WHERE id = ?', (order_id,))
     order = cur.fetchone()
     if not order:
@@ -251,7 +250,6 @@ async def update_order_status(order_id, new_status, reject_reason=None):
     type_text = "Покупка" if o_type == "buy" else "Продажа"
     updated_time = format_datetime(int(time.time()))
     
-    # Формируем сообщение для клиента
     if new_status == 'rejected' and reject_reason:
         reason_text = f"\n📝 Причина: {reject_reason}"
     else:
@@ -399,7 +397,6 @@ def confirm_menu(order_id):
     ])
 
 def order_buttons(order_id, status):
-    """Кнопки для админа в зависимости от статуса заявки"""
     if status == 'pending':
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="▶️ В обработку", callback_data=f"process_{order_id}"),
@@ -412,11 +409,6 @@ def order_buttons(order_id, status):
         ])
     else:
         return None
-
-def back_menu(user_id):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=get_text(user_id, 'back_btn'), callback_data="main")]
-    ])
 
 def lang_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -614,9 +606,10 @@ async def handle_callback(call: types.CallbackQuery):
         
         del pending_orders[order_id]
         
+        # После создания заявки показываем только кнопку "Главное меню"
         await call.message.edit_text(
             get_text(uid, 'order_created', id=order_id_db, type=type_text, coin=coin, amount=f"{rub:,.0f}", crypto=crypto),
-            reply_markup=main_menu(uid)
+            reply_markup=back_menu(uid)
         )
         
         username = f"@{call.from_user.username}" if call.from_user.username else "no username"
@@ -639,7 +632,8 @@ async def handle_callback(call: types.CallbackQuery):
         order_id = int(data.split("_")[2])
         if order_id in pending_orders:
             del pending_orders[order_id]
-        await call.message.edit_text(get_text(uid, 'order_cancelled'), reply_markup=main_menu(uid))
+        # После отмены заявки показываем только кнопку "Главное меню"
+        await call.message.edit_text(get_text(uid, 'order_cancelled'), reply_markup=back_menu(uid))
         await call.answer()
         return
     
