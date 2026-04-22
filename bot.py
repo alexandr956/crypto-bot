@@ -19,7 +19,7 @@ DEFAULT_MIN_LIMIT = 1000
 DEFAULT_MAX_LIMIT = 50000
 REFERRAL_BONUS_PERCENT = 1
 
-# Режим техработ
+# Режим техработ (глобальная переменная)
 TECH_MODE = False
 TECH_MESSAGE = ""
 
@@ -68,6 +68,32 @@ def main_menu(user_id):
         [InlineKeyboardButton(text="📜 История заявок", callback_data="history")],
         [InlineKeyboardButton(text="❓ Помощь", callback_data="help")]
     ])
+
+# ========== ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ТЕХРЕЖИМА ==========
+async def check_tech_mode(message=None, call=None):
+    """Проверяет, включён ли режим техработ, и отправляет сообщение пользователю"""
+    global TECH_MODE, TECH_MESSAGE
+    
+    if TECH_MODE:
+        user_id = None
+        if message:
+            user_id = message.from_user.id
+        elif call:
+            user_id = call.from_user.id
+        
+        if user_id and user_id != ADMIN_ID:
+            lang = get_lang(user_id)
+            if lang == 'ru':
+                text = f"🔧 *Технические работы*\n\n{TECH_MESSAGE}\n\n⏰ Пожалуйста, повторите попытку позже.\n\nПриносим извинения за временные неудобства!"
+            else:
+                text = f"🔧 *Technical maintenance*\n\n{TECH_MESSAGE}\n\n⏰ Please try again later.\n\nWe apologize for the temporary inconvenience!"
+            
+            if message:
+                await message.answer(text, parse_mode="Markdown")
+            elif call:
+                await call.message.answer(text, parse_mode="Markdown")
+            return True
+    return False
 
 # ========== ФУНКЦИЯ ДЛЯ РЕФЕРАЛЬНОЙ ССЫЛКИ ==========
 def get_referral_link_sync(user_id):
@@ -463,7 +489,7 @@ TEXTS = {
         'clear_db_success': "✅ База данных полностью очищена!\n\n- Удалены все пользователи\n- Удалены все заявки\n- Удалены все реферальные связи",
         'referral_info': "👥 *Реферальная система*\n\nПриглашай друзей и получай бонусы!\n\n🔗 *Твоя ссылка:*\n`{link}`\n\n📊 *Твоя статистика:*\n• 👥 Приглашено друзей: {total}\n• ✅ Активных рефералов: {active}\n• 💰 Всего заработано: {earned:.2f} ₽\n• 💎 Текущий баланс: {balance:.2f} ₽\n\n💎 *Как это работает:*\n• Отправь ссылку другу\n• Друг переходит по ссылке и нажимает Start\n• При выполнении заявки другом ты получаешь {percent}% бонус\n\n📋 Нажми «Скопировать ссылку», затем отправь её другу.",
         'no_referral_code': "❌ Не удалось создать реферальную ссылку",
-        'tech_notification': "🔧 *Технические работы*\n\n{message}\n\n⏰ Ориентировочное время восстановления: уточняется.\n\nПриносим извинения за временные неудобства!"
+        'tech_on_success': "🔧 *Режим технических работ ВКЛЮЧЁН*\n\nСообщение отправлено всем пользователям.\n\n📝 Текст: {message}\n\n⚠️ Теперь пользователи не смогут создавать заявки до отключения режима.\n\nДля отключения используй `/tech_off`"
     },
     'en': {
         'welcome': "🏦 Welcome to MOSS PAY Crypto Exchanger",
@@ -502,7 +528,7 @@ TEXTS = {
         'clear_db_success': "✅ Database cleared!\n\n- All users deleted\n- All orders deleted\n- All referral links deleted",
         'referral_info': "👥 *Referral system*\n\nInvite friends and get bonuses!\n\n🔗 *Your link:*\n`{link}`\n\n📊 *Your statistics:*\n• 👥 Friends invited: {total}\n• ✅ Active referrals: {active}\n• 💰 Total earned: {earned:.2f} RUB\n• 💎 Current balance: {balance:.2f} RUB\n\n💎 *How it works:*\n• Send link to friend\n• Friend follows link and presses Start\n• When friend completes an order, you get {percent}% bonus\n\n📋 Press «Copy link», then send it to your friend.",
         'no_referral_code': "❌ Failed to create referral link",
-        'tech_notification': "🔧 *Technical maintenance*\n\n{message}\n\n⏰ Estimated recovery time: to be announced.\n\nWe apologize for the temporary inconvenience!"
+        'tech_on_success': "🔧 *Technical maintenance mode ENABLED*\n\nMessage sent to all users.\n\n📝 Text: {message}\n\n⚠️ Users cannot create orders until maintenance is disabled.\n\nUse `/tech_off` to disable"
     }
 }
 
@@ -571,52 +597,71 @@ def admin_menu():
         [InlineKeyboardButton(text="🔙 Назад", callback_data="main")]
     ])
 
-# ========== КОМАНДА ДЛЯ ТЕХРАБОТ ==========
-@dp.message(Command("tech"))
-async def tech_mode(message: types.Message):
+# ========== КОМАНДА ДЛЯ ВКЛЮЧЕНИЯ ТЕХРАБОТ ==========
+@dp.message(Command("tech_on"))
+async def tech_on(message: types.Message):
+    global TECH_MODE, TECH_MESSAGE
+    
     if message.from_user.id != ADMIN_ID:
         await message.answer("⛔ Доступ запрещен")
         return
     
     # Получаем текст сообщения после команды
-    tech_text = message.text.replace("/tech", "").strip()
+    tech_text = message.text.replace("/tech_on", "").strip()
     if not tech_text:
-        await message.answer("❌ *Неверный формат*\n\nИспользуй: `/tech Текст сообщения`\n\nПример: `/tech Обновление базы данных, бот вернётся через 15 минут`", parse_mode="Markdown")
+        await message.answer("❌ *Неверный формат*\n\nИспользуй: `/tech_on Текст сообщения`\n\nПример: `/tech_on Обновление базы данных, бот вернётся через 15 минут`", parse_mode="Markdown")
         return
+    
+    TECH_MODE = True
+    TECH_MESSAGE = tech_text
     
     # Получаем всех пользователей
     cur.execute("SELECT user_id, language FROM users")
     users = cur.fetchall()
     
-    if not users:
-        await message.answer("❌ Нет пользователей для оповещения")
-        return
-    
     sent_count = 0
     error_count = 0
     
-    # Отправляем сообщение каждому пользователю
     for user_id, lang in users:
         try:
             if lang == 'ru':
-                await bot.send_message(user_id, f"🔧 *Технические работы*\n\n{tech_text}\n\n⏰ Ориентировочное время восстановления: уточняется.\n\nПриносим извинения за временные неудобства!", parse_mode="Markdown")
+                await bot.send_message(user_id, f"🔧 *Технические работы*\n\n{tech_text}\n\n⏰ Бот временно недоступен. Пожалуйста, повторите попытку позже.\n\nПриносим извинения за временные неудобства!", parse_mode="Markdown")
             else:
-                await bot.send_message(user_id, f"🔧 *Technical maintenance*\n\n{tech_text}\n\n⏰ Estimated recovery time: to be announced.\n\nWe apologize for the temporary inconvenience!", parse_mode="Markdown")
+                await bot.send_message(user_id, f"🔧 *Technical maintenance*\n\n{tech_text}\n\n⏰ Bot is temporarily unavailable. Please try again later.\n\nWe apologize for the temporary inconvenience!", parse_mode="Markdown")
             sent_count += 1
         except:
             error_count += 1
-        await asyncio.sleep(0.05)  # Небольшая задержка, чтобы не превысить лимиты Telegram
+        await asyncio.sleep(0.05)
     
     await message.answer(
-        f"✅ *Оповещение о техработах отправлено!*\n\n"
-        f"📨 Доставлено: {sent_count}\n"
-        f"❌ Ошибок: {error_count}\n"
-        f"📝 Текст: {tech_text}",
+        get_text(ADMIN_ID, 'tech_on_success', message=tech_text),
         parse_mode="Markdown"
     )
 
+# ========== КОМАНДА ДЛЯ ВЫКЛЮЧЕНИЯ ТЕХРАБОТ ==========
+@dp.message(Command("tech_off"))
+async def tech_off(message: types.Message):
+    global TECH_MODE, TECH_MESSAGE
+    
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ Доступ запрещен")
+        return
+    
+    if not TECH_MODE:
+        await message.answer("❌ Режим технических работ и так выключен")
+        return
+    
+    TECH_MODE = False
+    TECH_MESSAGE = ""
+    
+    await message.answer("✅ *Режим технических работ ВЫКЛЮЧЕН*\n\nБот снова доступен для пользователей.", parse_mode="Markdown")
+
 @dp.message(Command("start"))
 async def start(message: types.Message):
+    # Проверяем режим техработ
+    if await check_tech_mode(message=message):
+        return
+    
     uid = message.from_user.id
     username = message.from_user.username
     full_name = message.from_user.full_name
@@ -688,6 +733,10 @@ async def clear_db(message: types.Message):
         await message.answer("⛔ Доступ запрещен")
         return
     
+    # Проверяем режим техработ
+    if await check_tech_mode(message=message):
+        return
+    
     try:
         cur.execute("DELETE FROM users")
         cur.execute("DELETE FROM orders")
@@ -701,22 +750,42 @@ async def clear_db(message: types.Message):
 async def admin_panel(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
+    
+    # Проверяем режим техработ
+    if await check_tech_mode(message=message):
+        return
+    
     await message.answer(get_text(ADMIN_ID, 'admin_panel'), reply_markup=admin_menu())
 
 # ========== ОБРАБОТКА REPLY-КНОПОК ==========
 @dp.message(F.text == "📞 Контакты")
 async def contacts_reply(message: types.Message):
     uid = message.from_user.id
+    
+    # Проверяем режим техработ
+    if await check_tech_mode(message=message):
+        return
+    
     await message.answer(get_text(uid, 'contacts_text'), parse_mode="Markdown", reply_markup=reply_menu(uid))
 
 @dp.message(F.text == "💱 Сменить валюту")
 async def change_currency_reply(message: types.Message):
     uid = message.from_user.id
+    
+    # Проверяем режим техработ
+    if await check_tech_mode(message=message):
+        return
+    
     await message.answer(get_text(uid, 'select_fiat'), parse_mode="Markdown", reply_markup=fiat_menu())
 
 @dp.message(F.text == "👥 Реферальная система")
 async def referral_reply(message: types.Message):
     uid = message.from_user.id
+    
+    # Проверяем режим техработ
+    if await check_tech_mode(message=message):
+        return
+    
     referral_link = get_referral_link_sync(uid)
     if referral_link:
         stats = get_referral_stats(uid)
@@ -739,12 +808,21 @@ async def referral_reply(message: types.Message):
 @dp.message(F.text == "🌐 Сменить язык")
 async def change_lang_reply(message: types.Message):
     uid = message.from_user.id
+    
+    # Проверяем режим техработ
+    if await check_tech_mode(message=message):
+        return
+    
     await message.answer(get_text(uid, 'select_lang'), parse_mode="Markdown", reply_markup=lang_menu())
 
 @dp.message(Command("setrates"))
 async def set_rates(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("⛔ Доступ запрещен")
+        return
+    
+    # Проверяем режим техработ
+    if await check_tech_mode(message=message):
         return
     
     try:
@@ -792,6 +870,10 @@ async def show_rates_admin(message: types.Message):
         await message.answer("⛔ Доступ запрещен")
         return
     
+    # Проверяем режим техработ
+    if await check_tech_mode(message=message):
+        return
+    
     text = "📊 *Текущие курсы:*\n\n"
     for currency in ['RUB', 'BYN', 'UAH', 'KZT', 'TRY', 'AMD']:
         rates = get_all_rates(currency)
@@ -806,6 +888,10 @@ async def show_rates_admin(message: types.Message):
 async def set_limits(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("⛔ Доступ запрещен")
+        return
+    
+    # Проверяем режим техработ
+    if await check_tech_mode(message=message):
         return
     
     try:
@@ -843,6 +929,10 @@ async def show_limits_admin(message: types.Message):
         await message.answer("⛔ Доступ запрещен")
         return
     
+    # Проверяем режим техработ
+    if await check_tech_mode(message=message):
+        return
+    
     await message.answer(
         f"📊 Текущие лимиты:\n\n"
         f"💰 Минимальная сумма: {get_min_limit()}\n"
@@ -853,6 +943,11 @@ async def show_limits_admin(message: types.Message):
 async def handle_callback(call: types.CallbackQuery):
     uid = call.from_user.id
     data = call.data
+    
+    # Проверяем режим техработ (админ может игнорировать)
+    if uid != ADMIN_ID:
+        if await check_tech_mode(call=call):
+            return
     
     # Копирование реферальной ссылки
     if data.startswith("copy_link_"):
@@ -1149,6 +1244,11 @@ async def handle_callback(call: types.CallbackQuery):
 @dp.message()
 async def handle_amount(message: types.Message):
     uid = message.from_user.id
+    
+    # Проверяем режим техработ
+    if await check_tech_mode(message=message):
+        return
+    
     if uid not in pending_orders:
         return
     
