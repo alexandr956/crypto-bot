@@ -45,22 +45,12 @@ def keep_alive():
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Глобальная переменная для username бота
-BOT_USERNAME = None
-
-async def get_bot_username():
-    global BOT_USERNAME
-    if BOT_USERNAME is None:
-        me = await bot.get_me()
-        BOT_USERNAME = me.username
-    return BOT_USERNAME
-
 def get_referral_link_sync(user_id):
-    """Синхронная версия для получения ссылки (вызывается из колбэка)"""
+    """Синхронная версия для получения ссылки"""
     cur.execute("SELECT referral_code FROM users WHERE user_id = ?", (user_id,))
     row = cur.fetchone()
-    if row and row[0] and BOT_USERNAME:
-        return f"https://t.me/{BOT_USERNAME}?start=ref_{row[0]}"
+    if row and row[0]:
+        return f"https://t.me/mosspay_bot?start=ref_{row[0]}"
     return None
 
 # ========== БАЗА ДАННЫХ ==========
@@ -547,9 +537,6 @@ async def start(message: types.Message):
     username = message.from_user.username
     full_name = message.from_user.full_name
     
-    # Получаем username бота
-    await get_bot_username()
-    
     # Проверяем, есть ли реферальный код в команде
     referrer_id = None
     if message.text and ' ' in message.text:
@@ -738,10 +725,6 @@ async def handle_callback(call: types.CallbackQuery):
     
     # Реферальная система
     if data == "referral":
-        # Убеждаемся, что BOT_USERNAME загружен
-        if BOT_USERNAME is None:
-            await get_bot_username()
-        
         referral_link = get_referral_link_sync(uid)
         if referral_link:
             cur.execute("SELECT bonus_balance FROM users WHERE user_id = ?", (uid,))
@@ -1159,10 +1142,9 @@ async def handle_amount(message: types.Message):
         )
 
 async def main():
-    await get_bot_username()
     await bot.delete_webhook(drop_pending_updates=True)
     print("✅ Webhook удален")
-    print(f"✅ Бот запущен, username: {BOT_USERNAME}")
+    print("✅ Бот запущен")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
