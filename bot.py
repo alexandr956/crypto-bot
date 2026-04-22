@@ -402,9 +402,7 @@ TEXTS = {
         'admin_stats_btn': "📊 Статистика",
         'loading_rates': "🔄 Загружаю актуальные курсы...",
         'confirm_yes': "✅ Да, подтверждаю",
-        'confirm_no': "❌ Нет, отменить",
-        'referral_info': "👥 *Реферальная система*\n\nПриглашай друзей и получай бонусы!\n\n🔗 *Твоя реферальная ссылка:*\n\n💰 *Твой бонусный баланс:* {bonus:.2f} ₽\n\n💎 *Как это работает:*\n• Друг переходит по твоей ссылке\n• Регистрируется в боте\n• При создании заявки ты получаешь 5% бонус\n\nБонусы можно использовать для оплаты комиссии при обмене.",
-        'no_referral_code': "❌ Не удалось создать реферальную ссылку"
+        'confirm_no': "❌ Нет, отменить"
     },
     'en': {
         'welcome': "🏦 Welcome to MOSS PAY Crypto Exchanger",
@@ -439,9 +437,7 @@ TEXTS = {
         'admin_stats_btn': "📊 Statistics",
         'loading_rates': "🔄 Loading current rates...",
         'confirm_yes': "✅ Yes, confirm",
-        'confirm_no': "❌ No, cancel",
-        'referral_info': "👥 *Referral system*\n\nInvite friends and get bonuses!\n\n🔗 *Your referral link:*\n\n💰 *Your bonus balance:* {bonus:.2f} RUB\n\n💎 *How it works:*\n• Friend follows your link\n• Registers in the bot\n• When they create an order, you get 5% bonus\n\nBonuses can be used to pay commission on exchange.",
-        'no_referral_code': "❌ Failed to create referral link"
+        'confirm_no': "❌ No, cancel"
     }
 }
 
@@ -722,7 +718,21 @@ async def handle_callback(call: types.CallbackQuery):
     uid = call.from_user.id
     data = call.data
     
-    # Реферальная система (с кликабельной кнопкой)
+    # Копирование реферальной ссылки
+    if data.startswith("copy_link_"):
+        user_id = int(data.split("_")[2])
+        if user_id == uid:
+            referral_link = get_referral_link_sync(uid)
+            if referral_link:
+                await call.answer(f"Ссылка скопирована: {referral_link}", show_alert=True)
+                await call.message.answer(f"🔗 Твоя реферальная ссылка:\n`{referral_link}`", parse_mode="Markdown")
+            else:
+                await call.answer("Ошибка: ссылка не найдена", show_alert=True)
+        else:
+            await call.answer("Доступ запрещен", show_alert=True)
+        return
+    
+    # Реферальная система
     if data == "referral":
         referral_link = get_referral_link_sync(uid)
         if referral_link:
@@ -730,14 +740,22 @@ async def handle_callback(call: types.CallbackQuery):
             row = cur.fetchone()
             bonus = row[0] if row else 0
             
-            # Кнопка с ссылкой
+            # Две кнопки: скопировать и поделиться
             kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔗 Получить ссылку", url=referral_link)],
+                [InlineKeyboardButton(text="📋 Скопировать ссылку", callback_data=f"copy_link_{uid}")],
+                [InlineKeyboardButton(text="📤 Поделиться", url=f"https://t.me/share/url?url={referral_link}&text=Привет! Присоединяйся к обменнику MOSS PAY, получи бонус!")],
                 [InlineKeyboardButton(text="🔙 Главное меню", callback_data="main")]
             ])
             
             await call.message.answer(
-                get_text(uid, 'referral_info', bonus=bonus),
+                f"👥 *Реферальная система*\n\n"
+                f"🔗 *Твоя ссылка:*\n`{referral_link}`\n\n"
+                f"💰 *Твой бонусный баланс:* {bonus:.2f} ₽\n\n"
+                f"💎 *Как это работает:*\n"
+                f"• Отправь ссылку другу\n"
+                f"• Друг переходит по ссылке и нажимает Start\n"
+                f"• При создании заявки ты получаешь 5% бонус\n\n"
+                f"📋 Нажми «Скопировать ссылку», затем отправь её другу.",
                 parse_mode="Markdown",
                 reply_markup=kb
             )
