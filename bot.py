@@ -52,7 +52,6 @@ dp = Dispatcher()
 
 # ========== КЛАВИАТУРЫ ==========
 def reply_menu(user_id):
-    """Кнопки внизу экрана (ReplyKeyboard) с учётом языка"""
     lang = get_lang(user_id)
     if lang == 'ru':
         return ReplyKeyboardMarkup(
@@ -72,7 +71,6 @@ def reply_menu(user_id):
         )
 
 def main_menu(user_id):
-    """Инлайн-кнопки в чате с учётом языка"""
     lang = get_lang(user_id)
     if lang == 'ru':
         return InlineKeyboardMarkup(inline_keyboard=[
@@ -93,7 +91,6 @@ def main_menu(user_id):
 
 # ========== ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ТЕХРЕЖИМА ==========
 async def check_tech_mode(message=None, call=None):
-    """Проверяет, включён ли режим техработ, и отправляет сообщение пользователю"""
     global TECH_MODE, TECH_MESSAGE
     
     if TECH_MODE:
@@ -502,7 +499,7 @@ TEXTS = {
         'select_lang': "🌐 Выбери язык:",
         'currency_changed': "✅ Валюта изменена на {currency}",
         'help_text': "❓ *Как пользоваться обменником:*\n\n1️⃣ *Купить криптовалюту*\n   • Выбери валюту\n   • Выбери криптовалюту\n   • Введи сумму\n   • Подтверди заявку\n\n2️⃣ *Продать криптовалюту*\n   • Выбери валюту\n   • Выбери криптовалюту\n   • Введи сумму\n   • Подтверди заявку\n\n3️⃣ *Курсы*\n   • Актуальные курсы с наценкой 10% (покупка) и -2% (продажа)\n\n4️⃣ *Контакты*\n   • Связь с оператором: @shakakobmen\n\n⏰ *Время работы:* 10:00 – 22:00 МСК\n\n💎 *Бонусы:* приглашай друзей и получай 1% от их заявок",
-        'contacts_text': "📞 *Связь с оператором:*\n\n• Telegram: @shakakobmen\n• WhatsApp: +7 999 123-45-67\n• Email: support@crypto-exchange.ru\n\n⏰ *Время ответа:* обычно в течение 5 минут",
+        'contacts_text': "📞 *Связь с оператором:*\n\n• Telegram: @shakakobmen\n• Email: moss.pay@mail.ru\n\n⏰ *Время ответа:* обычно в течение 5 минут",
         'admin_panel': "🔧 Панель администратора\n\nВыберите действие:",
         'admin_orders_btn': "📋 Список заявок",
         'admin_stats_btn': "📊 Статистика",
@@ -541,7 +538,7 @@ TEXTS = {
         'select_lang': "🌐 Choose language:",
         'currency_changed': "✅ Currency changed to {currency}",
         'help_text': "❓ *How to use:*\n\n1️⃣ *Buy crypto*\n   • Choose currency\n   • Choose crypto\n   • Enter amount\n   • Confirm order\n\n2️⃣ *Sell crypto*\n   • Choose currency\n   • Choose crypto\n   • Enter amount\n   • Confirm order\n\n3️⃣ *Rates*\n   • Current rates with 10% markup (buy) and -2% (sell)\n\n4️⃣ *Contacts*\n   • Contact operator: @shakakobmen\n\n⏰ *Working hours:* 10:00 – 22:00 MSK\n\n💎 *Bonuses:* invite friends and get 1% from their orders",
-        'contacts_text': "📞 *Contact operator:*\n\n• Telegram: @shakakobmen\n• WhatsApp: +7 999 123-45-67\n• Email: support@crypto-exchange.ru\n\n⏰ *Response time:* usually within 5 minutes",
+        'contacts_text': "📞 *Contact operator:*\n\n• Telegram: @shakakobmen\n• Email: moss.pay@mail.ru\n\n⏰ *Response time:* usually within 5 minutes",
         'admin_panel': "🔧 Admin panel\n\nSelect action:",
         'admin_orders_btn': "📋 Orders list",
         'admin_stats_btn': "📊 Statistics",
@@ -574,7 +571,6 @@ def buy_menu(user_id):
         [InlineKeyboardButton(text="💰 USDT", callback_data="buy_USDT")],
         [InlineKeyboardButton(text="₿ BTC", callback_data="buy_BTC")],
         [InlineKeyboardButton(text="💎 ETH", callback_data="buy_ETH")],
-        [InlineKeyboardButton(text="💳 RapiraRUB", callback_data="buy_Rapira")],
         [InlineKeyboardButton(text=get_text(user_id, 'back_btn'), callback_data="main")]
     ])
 
@@ -583,7 +579,6 @@ def sell_menu(user_id):
         [InlineKeyboardButton(text="💰 USDT", callback_data="sell_USDT")],
         [InlineKeyboardButton(text="₿ BTC", callback_data="sell_BTC")],
         [InlineKeyboardButton(text="💎 ETH", callback_data="sell_ETH")],
-        [InlineKeyboardButton(text="💳 RapiraRUB", callback_data="sell_Rapira")],
         [InlineKeyboardButton(text=get_text(user_id, 'back_btn'), callback_data="main")]
     ])
 
@@ -975,17 +970,15 @@ async def handle_callback(call: types.CallbackQuery):
             await call.answer("Доступ запрещен", show_alert=True)
         return
     
-    # Смена языка (исправлено: обновляет reply-меню)
+    # Смена языка
     if data.startswith("lang_"):
         lang = 'ru' if data == "lang_ru" else 'en'
         cur.execute("UPDATE users SET language = ? WHERE user_id = ?", (lang, uid))
         conn.commit()
         
-        # Обновляем инлайн-меню
         await call.message.edit_reply_markup(reply_markup=main_menu(uid))
         await call.message.answer(get_text(uid, 'lang_selected'))
         
-        # Обновляем reply-меню (кнопки внизу)
         await call.message.answer("🔽 *Дополнительные опции:*" if lang == 'ru' else "🔽 *Additional options:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
         
         await call.answer()
