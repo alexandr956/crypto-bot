@@ -1212,7 +1212,7 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Выбор валюты для покупки
+    # Выбор валюты для покупки (сохраняем в pending)
     if data.startswith("buy_"):
         coin = data.split("_")[1]
         rates = await get_crypto_rates(uid)
@@ -1232,7 +1232,7 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Выбор валюты для продажи
+    # Выбор валюты для продажи (сохраняем в pending)
     if data.startswith("sell_"):
         coin = data.split("_")[1]
         rates = await get_crypto_rates(uid)
