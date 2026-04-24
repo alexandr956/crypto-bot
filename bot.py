@@ -271,7 +271,8 @@ def get_referral_stats(user_id):
         'balance': current_balance
     }
 
-pending_orders = {}
+# Временное хранилище для неподтверждённых заявок
+temp_orders = {}
 
 # ========== ФУНКЦИЯ ДЛЯ КУРСОВ ==========
 async def get_crypto_rates(user_id):
@@ -1212,7 +1213,70 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Выбор валюты для покупки (сохраняем в pending)
+    # Подтверждение заявки
+    if data.startswith("confirm_yes_"):
+        user_id = int(data.split("_")[2])
+        if user_id != uid:
+            await call.answer("Ошибка", show_alert=True)
+            return
+        
+        if uid not in temp_orders:
+            await call.message.edit_text("❌ Заявка не найдена. Попробуйте создать заново.", reply_markup=main_menu(uid))
+            await call.answer()
+            return
+        
+        action, coin, rub, crypto = temp_orders.pop(uid)
+        
+        type_text = get_text(uid, 'type_buy') if action == "buy" else get_text(uid, 'type_sell')
+        fiat_currency = get_user_fiat(uid)
+        currency_symbol = get_currency_symbol(fiat_currency)
+        
+        cur.execute('''
+            INSERT INTO orders (user_id, username, full_name, type, coin, fiat_currency, amount, crypto_amount, status, reject_reason, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (uid, call.from_user.username, call.from_user.full_name, action, coin, fiat_currency, rub, crypto, 'pending', '', int(time.time()), int(time.time())))
+        order_id_db = cur.lastrowid
+        conn.commit()
+        
+        await call.message.edit_text(
+            get_text(uid, 'order_created', id=order_id_db, type=type_text, coin=coin, amount=f"{rub:,.0f}", crypto=crypto, symbol=currency_symbol),
+            reply_markup=back_menu(uid)
+        )
+        
+        cur.execute("SELECT referrer_id FROM users WHERE user_id = ?", (uid,))
+        row = cur.fetchone()
+        if row and row[0]:
+            referrer_id = row[0]
+            bonus = rub * 0.05
+            add_bonus(referrer_id, bonus, f"Заявка #{order_id_db} от реферала")
+            cur.execute("UPDATE referrals SET status = 'completed' WHERE referred_id = ?", (uid,))
+            conn.commit()
+        
+        username = f"@{call.from_user.username}" if call.from_user.username else "no username"
+        await bot.send_message(
+            ADMIN_ID,
+            f"🆕 НОВАЯ ЗАЯВКА #{order_id_db}\n\n"
+            f"📌 {type_text} {coin}\n"
+            f"💰 Сумма: {rub:,.0f} {currency_symbol}\n"
+            f"🪙 Крипта: {crypto:.8f} {coin}\n"
+            f"👤 Пользователь: {call.from_user.full_name}\n"
+            f"{username}\n"
+            f"🆔 ID: {uid}\n"
+            f"📊 Статус: Ожидает",
+            reply_markup=order_buttons(order_id_db, 'pending')
+        )
+        await call.answer()
+        return
+    
+    if data.startswith("confirm_no_"):
+        user_id = int(data.split("_")[2])
+        if user_id == uid and uid in temp_orders:
+            del temp_orders[uid]
+        await call.message.edit_text(get_text(uid, 'order_cancelled'), reply_markup=back_menu(uid))
+        await call.answer()
+        return
+    
+    # Выбор валюты для покупки (сохраняем в temp_orders)
     if data.startswith("buy_"):
         coin = data.split("_")[1]
         rates = await get_crypto_rates(uid)
@@ -1221,7 +1285,7 @@ async def handle_callback(call: types.CallbackQuery):
             await call.answer()
             return
         
-        pending_orders[uid] = {"action": "buy", "coin": coin, "rates": rates}
+        temp_orders[uid] = {"action": "buy", "coin": coin, "rates": rates}
         min_limit = get_min_limit()
         max_limit = get_max_limit()
         currency = rates['currency']
@@ -1232,7 +1296,7 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Выбор валюты для продажи (сохраняем в pending)
+    # Выбор валюты для продажи (сохраняем в temp_orders)
     if data.startswith("sell_"):
         coin = data.split("_")[1]
         rates = await get_crypto_rates(uid)
@@ -1241,7 +1305,7 @@ async def handle_callback(call: types.CallbackQuery):
             await call.answer()
             return
         
-        pending_orders[uid] = {"action": "sell", "coin": coin, "rates": rates}
+        temp_orders[uid] = {"action": "sell", "coin": coin, "rates": rates}
         min_limit = get_min_limit()
         max_limit = get_max_limit()
         currency = rates['currency']
@@ -1259,7 +1323,7 @@ async def handle_amount(message: types.Message):
     if await check_tech_mode(message=message):
         return
     
-    if uid not in pending_orders:
+    if uid not in temp_orders:
         return
     
     try:
@@ -1273,14 +1337,14 @@ async def handle_amount(message: types.Message):
             )
             return
         
-        action = pending_orders[uid]["action"]
-        coin = pending_orders[uid]["coin"]
-        rates = pending_orders[uid]["rates"]
+        action = temp_orders[uid]["action"]
+        coin = temp_orders[uid]["coin"]
+        rates = temp_orders[uid]["rates"]
         
         crypto = calculate_crypto_amount(rub, coin, action, rates)
         
-        # Сохраняем заявку по uid
-        pending_orders[uid] = (action, coin, rub, crypto)
+        # Сохраняем данные для подтверждения
+        temp_orders[uid] = (action, coin, rub, crypto)
         
         currency = rates['currency']
         currency_symbol = get_currency_symbol(currency)
