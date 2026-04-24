@@ -582,10 +582,10 @@ def sell_menu(user_id):
         [InlineKeyboardButton(text=get_text(user_id, 'back_btn'), callback_data="main")]
     ])
 
-def confirm_menu(order_id):
+def confirm_menu(user_id):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Да", callback_data=f"confirm_yes_{order_id}"),
-         InlineKeyboardButton(text="❌ Нет", callback_data=f"confirm_no_{order_id}")]
+        [InlineKeyboardButton(text="✅ Да", callback_data=f"confirm_yes_{user_id}"),
+         InlineKeyboardButton(text="❌ Нет", callback_data=f"confirm_no_{user_id}")]
     ])
 
 def order_buttons(order_id, status):
@@ -1279,15 +1279,14 @@ async def handle_amount(message: types.Message):
         
         crypto = calculate_crypto_amount(rub, coin, action, rates)
         
-        order_id = int(time.time() * 1000)
-        pending_orders[order_id] = (action, coin, rub, crypto)
-        del pending_orders[uid]
+        # Сохраняем заявку по uid
+        pending_orders[uid] = (action, coin, rub, crypto)
         
         currency = rates['currency']
         currency_symbol = get_currency_symbol(currency)
         await message.answer(
             get_text(uid, 'confirm_order', amount=f"{rub:,.0f}", crypto=crypto, coin=coin, min=min_limit, max=max_limit, symbol=currency_symbol),
-            reply_markup=confirm_menu(order_id)
+            reply_markup=confirm_menu(uid)
         )
         
     except ValueError:
