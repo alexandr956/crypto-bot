@@ -615,7 +615,7 @@ def admin_menu():
         [InlineKeyboardButton(text="🔙 Назад", callback_data="main")]
     ])
 
-# ========== КОМАНДА ДЛЯ ТЕХРАБОТ ==========
+# ========== КОМАНДЫ ТЕХРАБОТ ==========
 @dp.message(Command("tech_on"))
 async def tech_on(message: types.Message):
     global TECH_MODE, TECH_MESSAGE
