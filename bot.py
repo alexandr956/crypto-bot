@@ -19,7 +19,7 @@ DEFAULT_MIN_LIMIT = 1000
 DEFAULT_MAX_LIMIT = 50000
 REFERRAL_BONUS_PERCENT = 1
 
-# Режим техработ (глобальная переменная)
+# Режим техработ
 TECH_MODE = False
 TECH_MESSAGE = ""
 
@@ -52,22 +52,44 @@ dp = Dispatcher()
 
 # ========== КЛАВИАТУРЫ ==========
 def reply_menu(user_id):
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📞 Контакты"), KeyboardButton(text="💱 Сменить валюту")],
-            [KeyboardButton(text="👥 Реферальная система"), KeyboardButton(text="🌐 Сменить язык")]
-        ],
-        resize_keyboard=True
-    )
+    """Кнопки внизу экрана (ReplyKeyboard) с учётом языка"""
+    lang = get_lang(user_id)
+    if lang == 'ru':
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📞 Контакты"), KeyboardButton(text="💱 Сменить валюту")],
+                [KeyboardButton(text="👥 Реферальная система"), KeyboardButton(text="🌐 Сменить язык")]
+            ],
+            resize_keyboard=True
+        )
+    else:
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📞 Contacts"), KeyboardButton(text="💱 Change currency")],
+                [KeyboardButton(text="👥 Referral system"), KeyboardButton(text="🌐 Change language")]
+            ],
+            resize_keyboard=True
+        )
 
 def main_menu(user_id):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🟢 Купить", callback_data="buy")],
-        [InlineKeyboardButton(text="🔴 Продать", callback_data="sell")],
-        [InlineKeyboardButton(text="📊 Курсы", callback_data="rates")],
-        [InlineKeyboardButton(text="📜 История заявок", callback_data="history")],
-        [InlineKeyboardButton(text="❓ Помощь", callback_data="help")]
-    ])
+    """Инлайн-кнопки в чате с учётом языка"""
+    lang = get_lang(user_id)
+    if lang == 'ru':
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🟢 Купить", callback_data="buy")],
+            [InlineKeyboardButton(text="🔴 Продать", callback_data="sell")],
+            [InlineKeyboardButton(text="📊 Курсы", callback_data="rates")],
+            [InlineKeyboardButton(text="📜 История заявок", callback_data="history")],
+            [InlineKeyboardButton(text="❓ Помощь", callback_data="help")]
+        ])
+    else:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🟢 Buy", callback_data="buy")],
+            [InlineKeyboardButton(text="🔴 Sell", callback_data="sell")],
+            [InlineKeyboardButton(text="📊 Rates", callback_data="rates")],
+            [InlineKeyboardButton(text="📜 Order history", callback_data="history")],
+            [InlineKeyboardButton(text="❓ Help", callback_data="help")]
+        ])
 
 # ========== ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ТЕХРЕЖИМА ==========
 async def check_tech_mode(message=None, call=None):
@@ -360,8 +382,9 @@ def user_notification_buttons(order_id, lang='ru'):
         ])
 
 def back_menu(user_id):
+    lang = get_lang(user_id)
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Главное меню", callback_data="main")]
+        [InlineKeyboardButton(text="🔙 Назад" if lang == 'ru' else "🔙 Back", callback_data="main")]
     ])
 
 def fiat_menu():
@@ -552,7 +575,7 @@ def buy_menu(user_id):
         [InlineKeyboardButton(text="₿ BTC", callback_data="buy_BTC")],
         [InlineKeyboardButton(text="💎 ETH", callback_data="buy_ETH")],
         [InlineKeyboardButton(text="💳 RapiraRUB", callback_data="buy_Rapira")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="main")]
+        [InlineKeyboardButton(text=get_text(user_id, 'back_btn'), callback_data="main")]
     ])
 
 def sell_menu(user_id):
@@ -561,7 +584,7 @@ def sell_menu(user_id):
         [InlineKeyboardButton(text="₿ BTC", callback_data="sell_BTC")],
         [InlineKeyboardButton(text="💎 ETH", callback_data="sell_ETH")],
         [InlineKeyboardButton(text="💳 RapiraRUB", callback_data="sell_Rapira")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="main")]
+        [InlineKeyboardButton(text=get_text(user_id, 'back_btn'), callback_data="main")]
     ])
 
 def confirm_menu(order_id):
@@ -597,7 +620,7 @@ def admin_menu():
         [InlineKeyboardButton(text="🔙 Назад", callback_data="main")]
     ])
 
-# ========== КОМАНДА ДЛЯ ВКЛЮЧЕНИЯ ТЕХРАБОТ ==========
+# ========== КОМАНДА ДЛЯ ТЕХРАБОТ ==========
 @dp.message(Command("tech_on"))
 async def tech_on(message: types.Message):
     global TECH_MODE, TECH_MESSAGE
@@ -606,7 +629,6 @@ async def tech_on(message: types.Message):
         await message.answer("⛔ Доступ запрещен")
         return
     
-    # Получаем текст сообщения после команды
     tech_text = message.text.replace("/tech_on", "").strip()
     if not tech_text:
         await message.answer("❌ *Неверный формат*\n\nИспользуй: `/tech_on Текст сообщения`\n\nПример: `/tech_on Обновление базы данных, бот вернётся через 15 минут`", parse_mode="Markdown")
@@ -615,7 +637,6 @@ async def tech_on(message: types.Message):
     TECH_MODE = True
     TECH_MESSAGE = tech_text
     
-    # Получаем всех пользователей
     cur.execute("SELECT user_id, language FROM users")
     users = cur.fetchall()
     
@@ -638,7 +659,6 @@ async def tech_on(message: types.Message):
         parse_mode="Markdown"
     )
 
-# ========== КОМАНДА ДЛЯ ВЫКЛЮЧЕНИЯ ТЕХРАБОТ ==========
 @dp.message(Command("tech_off"))
 async def tech_off(message: types.Message):
     global TECH_MODE, TECH_MESSAGE
@@ -658,7 +678,6 @@ async def tech_off(message: types.Message):
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
-    # Проверяем режим техработ
     if await check_tech_mode(message=message):
         return
     
@@ -722,10 +741,10 @@ async def start(message: types.Message):
     
     try:
         await message.answer_photo(photo_url, caption=welcome_text, reply_markup=main_menu(uid))
-        await message.answer("🔽 *Дополнительные опции:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
+        await message.answer("🔽 *Дополнительные опции:*" if lang == 'ru' else "🔽 *Additional options:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
     except:
         await message.answer(welcome_text, reply_markup=main_menu(uid))
-        await message.answer("🔽 *Additional options:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
+        await message.answer("🔽 *Additional options:*" if lang == 'en' else "🔽 *Дополнительные опции:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
 
 @dp.message(Command("clear_db"))
 async def clear_db(message: types.Message):
@@ -733,7 +752,6 @@ async def clear_db(message: types.Message):
         await message.answer("⛔ Доступ запрещен")
         return
     
-    # Проверяем режим техработ
     if await check_tech_mode(message=message):
         return
     
@@ -751,38 +769,34 @@ async def admin_panel(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
     
-    # Проверяем режим техработ
     if await check_tech_mode(message=message):
         return
     
     await message.answer(get_text(ADMIN_ID, 'admin_panel'), reply_markup=admin_menu())
 
 # ========== ОБРАБОТКА REPLY-КНОПОК ==========
-@dp.message(F.text == "📞 Контакты")
+@dp.message(F.text.in_(["📞 Контакты", "📞 Contacts"]))
 async def contacts_reply(message: types.Message):
     uid = message.from_user.id
     
-    # Проверяем режим техработ
     if await check_tech_mode(message=message):
         return
     
     await message.answer(get_text(uid, 'contacts_text'), parse_mode="Markdown", reply_markup=reply_menu(uid))
 
-@dp.message(F.text == "💱 Сменить валюту")
+@dp.message(F.text.in_(["💱 Сменить валюту", "💱 Change currency"]))
 async def change_currency_reply(message: types.Message):
     uid = message.from_user.id
     
-    # Проверяем режим техработ
     if await check_tech_mode(message=message):
         return
     
     await message.answer(get_text(uid, 'select_fiat'), parse_mode="Markdown", reply_markup=fiat_menu())
 
-@dp.message(F.text == "👥 Реферальная система")
+@dp.message(F.text.in_(["👥 Реферальная система", "👥 Referral system"]))
 async def referral_reply(message: types.Message):
     uid = message.from_user.id
     
-    # Проверяем режим техработ
     if await check_tech_mode(message=message):
         return
     
@@ -805,15 +819,18 @@ async def referral_reply(message: types.Message):
     else:
         await message.answer(get_text(uid, 'no_referral_code'), reply_markup=reply_menu(uid))
 
-@dp.message(F.text == "🌐 Сменить язык")
+@dp.message(F.text.in_(["🌐 Сменить язык", "🌐 Change language"]))
 async def change_lang_reply(message: types.Message):
     uid = message.from_user.id
     
-    # Проверяем режим техработ
     if await check_tech_mode(message=message):
         return
     
-    await message.answer(get_text(uid, 'select_lang'), parse_mode="Markdown", reply_markup=lang_menu())
+    lang = get_lang(uid)
+    if lang == 'ru':
+        await message.answer(get_text(uid, 'select_lang'), parse_mode="Markdown", reply_markup=lang_menu())
+    else:
+        await message.answer(get_text(uid, 'select_lang'), parse_mode="Markdown", reply_markup=lang_menu())
 
 @dp.message(Command("setrates"))
 async def set_rates(message: types.Message):
@@ -821,7 +838,6 @@ async def set_rates(message: types.Message):
         await message.answer("⛔ Доступ запрещен")
         return
     
-    # Проверяем режим техработ
     if await check_tech_mode(message=message):
         return
     
@@ -870,7 +886,6 @@ async def show_rates_admin(message: types.Message):
         await message.answer("⛔ Доступ запрещен")
         return
     
-    # Проверяем режим техработ
     if await check_tech_mode(message=message):
         return
     
@@ -890,7 +905,6 @@ async def set_limits(message: types.Message):
         await message.answer("⛔ Доступ запрещен")
         return
     
-    # Проверяем режим техработ
     if await check_tech_mode(message=message):
         return
     
@@ -929,7 +943,6 @@ async def show_limits_admin(message: types.Message):
         await message.answer("⛔ Доступ запрещен")
         return
     
-    # Проверяем режим техработ
     if await check_tech_mode(message=message):
         return
     
@@ -944,7 +957,6 @@ async def handle_callback(call: types.CallbackQuery):
     uid = call.from_user.id
     data = call.data
     
-    # Проверяем режим техработ (админ может игнорировать)
     if uid != ADMIN_ID:
         if await check_tech_mode(call=call):
             return
@@ -963,13 +975,19 @@ async def handle_callback(call: types.CallbackQuery):
             await call.answer("Доступ запрещен", show_alert=True)
         return
     
-    # Смена языка
+    # Смена языка (исправлено: обновляет reply-меню)
     if data.startswith("lang_"):
         lang = 'ru' if data == "lang_ru" else 'en'
         cur.execute("UPDATE users SET language = ? WHERE user_id = ?", (lang, uid))
         conn.commit()
+        
+        # Обновляем инлайн-меню
         await call.message.edit_reply_markup(reply_markup=main_menu(uid))
         await call.message.answer(get_text(uid, 'lang_selected'))
+        
+        # Обновляем reply-меню (кнопки внизу)
+        await call.message.answer("🔽 *Дополнительные опции:*" if lang == 'ru' else "🔽 *Additional options:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
+        
         await call.answer()
         return
     
@@ -1245,7 +1263,6 @@ async def handle_callback(call: types.CallbackQuery):
 async def handle_amount(message: types.Message):
     uid = message.from_user.id
     
-    # Проверяем режим техработ
     if await check_tech_mode(message=message):
         return
     
