@@ -399,14 +399,65 @@ def back_menu(user_id):
         [InlineKeyboardButton(text="🔙 Назад" if lang == 'ru' else "🔙 Back", callback_data="main")]
     ])
 
-def fiat_menu():
+def fiat_menu(user_id):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🇷🇺 RUB", callback_data="fiat_RUB"),
          InlineKeyboardButton(text="🇧🇾 BYN", callback_data="fiat_BYN")],
         [InlineKeyboardButton(text="🇺🇦 UAH", callback_data="fiat_UAH"),
          InlineKeyboardButton(text="🇰🇿 KZT", callback_data="fiat_KZT")],
         [InlineKeyboardButton(text="🇹🇷 TRY", callback_data="fiat_TRY"),
-         InlineKeyboardButton(text="🇦🇲 AMD", callback_data="fiat_AMD")]
+         InlineKeyboardButton(text="🇦🇲 AMD", callback_data="fiat_AMD")],
+        [InlineKeyboardButton(text=get_text(user_id, 'back_btn'), callback_data="main")]
+    ])
+
+def lang_menu(user_id):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang_ru")],
+        [InlineKeyboardButton(text="🇬🇧 English", callback_data="lang_en")],
+        [InlineKeyboardButton(text=get_text(user_id, 'back_btn'), callback_data="main")]
+    ])
+
+def buy_menu(user_id):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💰 USDT", callback_data="buy_USDT")],
+        [InlineKeyboardButton(text="₿ BTC", callback_data="buy_BTC")],
+        [InlineKeyboardButton(text="💎 ETH", callback_data="buy_ETH")],
+        [InlineKeyboardButton(text=get_text(user_id, 'back_btn'), callback_data="main")]
+    ])
+
+def sell_menu(user_id):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💰 USDT", callback_data="sell_USDT")],
+        [InlineKeyboardButton(text="₿ BTC", callback_data="sell_BTC")],
+        [InlineKeyboardButton(text="💎 ETH", callback_data="sell_ETH")],
+        [InlineKeyboardButton(text=get_text(user_id, 'back_btn'), callback_data="main")]
+    ])
+
+def confirm_menu(user_id):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Да", callback_data=f"confirm_yes_{user_id}"),
+         InlineKeyboardButton(text="❌ Нет", callback_data=f"confirm_no_{user_id}")]
+    ])
+
+def order_buttons(order_id, status):
+    if status == 'pending':
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="▶️ В обработку", callback_data=f"process_{order_id}"),
+             InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{order_id}")]
+        ])
+    elif status == 'processing':
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Выполнить", callback_data=f"complete_{order_id}"),
+             InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{order_id}")]
+        ])
+    else:
+        return None
+
+def admin_menu():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 Список заявок", callback_data="admin_orders")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="main")]
     ])
 
 def reject_reason_menu(order_id):
@@ -587,56 +638,6 @@ def get_lang(user_id):
     row = cur.fetchone()
     return row[0] if row else 'ru'
 
-def buy_menu(user_id):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💰 USDT", callback_data="buy_USDT")],
-        [InlineKeyboardButton(text="₿ BTC", callback_data="buy_BTC")],
-        [InlineKeyboardButton(text="💎 ETH", callback_data="buy_ETH")],
-        [InlineKeyboardButton(text=get_text(user_id, 'back_btn'), callback_data="main")]
-    ])
-
-def sell_menu(user_id):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💰 USDT", callback_data="sell_USDT")],
-        [InlineKeyboardButton(text="₿ BTC", callback_data="sell_BTC")],
-        [InlineKeyboardButton(text="💎 ETH", callback_data="sell_ETH")],
-        [InlineKeyboardButton(text=get_text(user_id, 'back_btn'), callback_data="main")]
-    ])
-
-def confirm_menu(user_id):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Да", callback_data=f"confirm_yes_{user_id}"),
-         InlineKeyboardButton(text="❌ Нет", callback_data=f"confirm_no_{user_id}")]
-    ])
-
-def order_buttons(order_id, status):
-    if status == 'pending':
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="▶️ В обработку", callback_data=f"process_{order_id}"),
-             InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{order_id}")]
-        ])
-    elif status == 'processing':
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Выполнить", callback_data=f"complete_{order_id}"),
-             InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{order_id}")]
-        ])
-    else:
-        return None
-
-def lang_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang_ru")],
-        [InlineKeyboardButton(text="🇬🇧 English", callback_data="lang_en")]
-    ])
-
-def admin_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📋 Список заявок", callback_data="admin_orders")],
-        [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="main")]
-    ])
-
-# ========== КОМАНДЫ ТЕХРАБОТ ==========
 @dp.message(Command("tech_on"))
 async def tech_on(message: types.Message):
     global TECH_MODE, TECH_MESSAGE
@@ -845,7 +846,7 @@ async def change_currency_reply(message: types.Message):
     if await check_tech_mode(message=message):
         return
     
-    await message.answer(get_text(uid, 'select_fiat'), parse_mode="Markdown", reply_markup=fiat_menu())
+    await message.answer(get_text(uid, 'select_fiat'), parse_mode="Markdown", reply_markup=fiat_menu(uid))
 
 @dp.message(F.text.in_(["👥 Реферальная система", "👥 Referral system"]))
 async def referral_reply(message: types.Message):
@@ -882,9 +883,9 @@ async def change_lang_reply(message: types.Message):
     
     lang = get_lang(uid)
     if lang == 'ru':
-        await message.answer(get_text(uid, 'select_lang'), parse_mode="Markdown", reply_markup=lang_menu())
+        await message.answer(get_text(uid, 'select_lang'), parse_mode="Markdown", reply_markup=lang_menu(uid))
     else:
-        await message.answer(get_text(uid, 'select_lang'), parse_mode="Markdown", reply_markup=lang_menu())
+        await message.answer(get_text(uid, 'select_lang'), parse_mode="Markdown", reply_markup=lang_menu(uid))
 
 @dp.message(Command("setrates"))
 async def set_rates(message: types.Message):
@@ -1292,7 +1293,8 @@ async def handle_callback(call: types.CallbackQuery):
             await call.answer()
             return
         
-        action, coin, rub, crypto = temp_orders.pop(uid)
+        action, coin, rub, crypto = temp_orders.pop
+                action, coin, rub, crypto = temp_orders.pop(uid)
         
         type_text = get_text(uid, 'type_buy') if action == "buy" else get_text(uid, 'type_sell')
         fiat_currency = get_user_fiat(uid)
