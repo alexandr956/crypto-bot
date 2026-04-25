@@ -1281,7 +1281,7 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Подтверждение заявки
+    # Подтверждение заявки (ИСПРАВЛЕННЫЙ БЛОК)
     if data.startswith("confirm_yes_"):
         user_id = int(data.split("_")[2])
         if user_id != uid:
@@ -1293,8 +1293,8 @@ async def handle_callback(call: types.CallbackQuery):
             await call.answer()
             return
         
-        action, coin, rub, crypto = temp_orders.pop
-                action, coin, rub, crypto = temp_orders.pop(uid)
+        # ИСПРАВЛЕНО: убрана лишняя строка, правильный отступ
+        action, coin, rub, crypto = temp_orders.pop(uid)
         
         type_text = get_text(uid, 'type_buy') if action == "buy" else get_text(uid, 'type_sell')
         fiat_currency = get_user_fiat(uid)
@@ -1316,8 +1316,10 @@ async def handle_callback(call: types.CallbackQuery):
         row = cur.fetchone()
         if row and row[0]:
             referrer_id = row[0]
-            bonus = rub * 0.05
-            add_bonus(referrer_id, bonus, f"Заявка #{order_id_db} от реферала")
+            # ИСПРАВЛЕНО: используем процент из настроек вместо 5%
+            bonus_percent = get_setting('referral_bonus_percent', 1)
+            bonus = rub * (bonus_percent / 100)
+            add_bonus(referrer_id, bonus, f"Заявка #{order_id_db} от реферала ({bonus_percent}%)")
             cur.execute("UPDATE referrals SET status = 'completed' WHERE referred_id = ?", (uid,))
             conn.commit()
         
@@ -1412,6 +1414,7 @@ async def handle_amount(message: types.Message):
         
         crypto = calculate_crypto_amount(rub, coin, action, rates)
         
+        # Сохраняем как кортеж, а не словарь
         temp_orders[uid] = (action, coin, rub, crypto)
         
         currency = rates['currency']
