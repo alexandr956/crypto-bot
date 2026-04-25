@@ -725,18 +725,34 @@ async def start(message: types.Message):
         
         conn.commit()
     
-    photo_url = "https://raw.githubusercontent.com/alexandr956/crypto-bot/main/welcome.jpg"
     lang = get_lang(uid)
     
     if lang == 'ru':
-        welcome_caption = f"👋 Привет, {message.from_user.first_name}!\n\n🏦 Добро пожаловать в КриптоОбменник MOSS PAY\n\n💎 *Почему выбирают нас:*\n• 🚀 Мгновенные заявки\n• 🔒 Безопасные сделки\n• 💬 Поддержка 24/7\n• 💰 Лучшие курсы\n• 🔑 Обмен без KYC\n\n👇 *Выберите способ оплаты:*"
+        welcome_text = (
+            f"👋 Привет, {message.from_user.first_name}!\n\n"
+            f"🏦 Добро пожаловать в КриптоОбменник MOSS PAY\n\n"
+            f"💎 *Почему выбирают нас:*\n"
+            f"• 🚀 Мгновенные заявки\n"
+            f"• 🔒 Безопасные сделки\n"
+            f"• 💬 Поддержка 24/7\n"
+            f"• 💰 Лучшие курсы\n"
+            f"• 🔑 Обмен без KYC\n\n"
+            f"👇 *Выберите способ оплаты:*"
+        )
     else:
-        welcome_caption = f"👋 Hi {message.from_user.first_name}!\n\n🏦 Welcome to MOSS PAY Crypto Exchanger\n\n💎 *Why choose us:*\n• 🚀 Instant orders\n• 🔒 Secure transactions\n• 💬 24/7 support\n• 💰 Best rates\n• 🔑 No KYC\n\n👇 *Select payment method:*"
+        welcome_text = (
+            f"👋 Hi {message.from_user.first_name}!\n\n"
+            f"🏦 Welcome to MOSS PAY Crypto Exchanger\n\n"
+            f"💎 *Why choose us:*\n"
+            f"• 🚀 Instant orders\n"
+            f"• 🔒 Secure transactions\n"
+            f"• 💬 24/7 support\n"
+            f"• 💰 Best rates\n"
+            f"• 🔑 No KYC\n\n"
+            f"👇 *Select payment method:*"
+        )
     
-    try:
-        await message.answer_photo(photo_url, caption=welcome_caption, reply_markup=choose_payment_menu(uid))
-    except:
-        await message.answer(welcome_caption, reply_markup=choose_payment_menu(uid))
+    await message.answer(welcome_text, reply_markup=choose_payment_menu(uid))
 
 @dp.message(Command("clear_db"))
 async def clear_db(message: types.Message):
@@ -777,7 +793,7 @@ async def payment_cash_handler(call: types.CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад" if get_lang(uid) == 'ru' else "🔙 Back", callback_data="back_to_payment_choice")]
     ])
     
-    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
     await call.answer()
 
 @dp.callback_query(lambda c: c.data == "payment_cashless")
@@ -785,7 +801,7 @@ async def payment_cashless_handler(call: types.CallbackQuery):
     uid = call.from_user.id
     lang = get_lang(uid)
     
-    await call.message.edit_text(get_text(uid, 'cashless_title'), parse_mode="Markdown", reply_markup=main_menu(uid))
+    await call.message.answer(get_text(uid, 'cashless_title'), parse_mode="Markdown", reply_markup=main_menu(uid))
     await call.message.answer("🔽 *Дополнительные опции:*" if lang == 'ru' else "🔽 *Additional options:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
     await call.answer()
 
@@ -793,13 +809,13 @@ async def payment_cashless_handler(call: types.CallbackQuery):
 async def back_to_payment_handler(call: types.CallbackQuery):
     uid = call.from_user.id
     lang = get_lang(uid)
-    photo_url = "https://raw.githubusercontent.com/alexandr956/crypto-bot/main/welcome.jpg"
-    caption = "👇 *Выберите способ оплаты:*" if lang == 'ru' else "👇 *Select payment method:*"
     
-    try:
-        await call.message.answer_photo(photo_url, caption=caption, parse_mode="Markdown", reply_markup=choose_payment_menu(uid))
-    except:
-        await call.message.answer(caption, parse_mode="Markdown", reply_markup=choose_payment_menu(uid))
+    if lang == 'ru':
+        text = f"👋 Привет! Выберите способ оплаты:"
+    else:
+        text = f"👋 Hi! Select payment method:"
+    
+    await call.message.answer(text, reply_markup=choose_payment_menu(uid))
     await call.answer()
 
 # ========== ОБРАБОТКА REPLY-КНОПОК ==========
@@ -1009,14 +1025,13 @@ async def handle_callback(call: types.CallbackQuery):
         cur.execute("UPDATE users SET language = ? WHERE user_id = ?", (lang, uid))
         conn.commit()
         
-        # Показываем выбор оплаты после смены языка
         lang = get_lang(uid)
-        photo_url = "https://raw.githubusercontent.com/alexandr956/crypto-bot/main/welcome.jpg"
-        caption = f"👋 Привет! Выберите способ оплаты:" if lang == 'ru' else f"👋 Hi! Select payment method:"
-        try:
-            await call.message.answer_photo(photo_url, caption=caption, reply_markup=choose_payment_menu(uid))
-        except:
-            await call.message.answer(caption, reply_markup=choose_payment_menu(uid))
+        if lang == 'ru':
+            text = f"👋 Привет! Выберите способ оплаты:"
+        else:
+            text = f"👋 Hi! Select payment method:"
+        
+        await call.message.answer(text, reply_markup=choose_payment_menu(uid))
         await call.answer()
         return
     
@@ -1025,7 +1040,6 @@ async def handle_callback(call: types.CallbackQuery):
         currency = data.split("_")[1]
         set_user_fiat(uid, currency)
         await call.message.answer(get_text(uid, 'currency_changed', currency=currency))
-        # После смены валюты показываем главное меню безналичных
         lang = get_lang(uid)
         await call.message.answer(get_text(uid, 'cashless_title'), parse_mode="Markdown", reply_markup=main_menu(uid))
         await call.message.answer("🔽 *Дополнительные опции:*" if lang == 'ru' else "🔽 *Additional options:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
@@ -1315,7 +1329,7 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Выбор валюты для покупки (сохраняем в temp_orders)
+    # Выбор валюты для покупки
     if data.startswith("buy_"):
         coin = data.split("_")[1]
         rates = await get_crypto_rates(uid)
@@ -1335,7 +1349,7 @@ async def handle_callback(call: types.CallbackQuery):
         await call.answer()
         return
     
-    # Выбор валюты для продажи (сохраняем в temp_orders)
+    # Выбор валюты для продажи
     if data.startswith("sell_"):
         coin = data.split("_")[1]
         rates = await get_crypto_rates(uid)
@@ -1382,7 +1396,6 @@ async def handle_amount(message: types.Message):
         
         crypto = calculate_crypto_amount(rub, coin, action, rates)
         
-        # Сохраняем данные для подтверждения
         temp_orders[uid] = (action, coin, rub, crypto)
         
         currency = rates['currency']
