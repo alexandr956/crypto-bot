@@ -51,6 +51,20 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 # ========== КЛАВИАТУРЫ ==========
+def choose_payment_menu(user_id):
+    """Меню выбора типа оплаты (наличные / безналичные)"""
+    lang = get_lang(user_id)
+    if lang == 'ru':
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💵 Наличные", callback_data="payment_cash")],
+            [InlineKeyboardButton(text="💳 Безналичные", callback_data="payment_cashless")]
+        ])
+    else:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💵 Cash", callback_data="payment_cash")],
+            [InlineKeyboardButton(text="💳 Cashless", callback_data="payment_cashless")]
+        ])
+
 def reply_menu(user_id):
     lang = get_lang(user_id)
     if lang == 'ru':
@@ -71,6 +85,7 @@ def reply_menu(user_id):
         )
 
 def main_menu(user_id):
+    """Основное меню для безналичных"""
     lang = get_lang(user_id)
     if lang == 'ru':
         return InlineKeyboardMarkup(inline_keyboard=[
@@ -87,6 +102,20 @@ def main_menu(user_id):
             [InlineKeyboardButton(text="📊 Rates", callback_data="rates")],
             [InlineKeyboardButton(text="📜 Order history", callback_data="history")],
             [InlineKeyboardButton(text="❓ Help", callback_data="help")]
+        ])
+
+def cash_menu(user_id):
+    """Меню для наличных (контакты оператора)"""
+    lang = get_lang(user_id)
+    if lang == 'ru':
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📞 Связь с оператором", url="https://t.me/shakakobmen")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_payment_choice")]
+        ])
+    else:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📞 Contact operator", url="https://t.me/shakakobmen")],
+            [InlineKeyboardButton(text="🔙 Back", callback_data="back_to_payment_choice")]
         ])
 
 # ========== ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ТЕХРЕЖИМА ==========
@@ -271,7 +300,6 @@ def get_referral_stats(user_id):
         'balance': current_balance
     }
 
-# Временное хранилище для неподтверждённых заявок
 temp_orders = {}
 
 # ========== ФУНКЦИЯ ДЛЯ КУРСОВ ==========
@@ -475,6 +503,9 @@ async def update_order_status(order_id, new_status, reject_reason=None):
 TEXTS = {
     'ru': {
         'welcome': "🏦 Добро пожаловать в КриптоОбменник MOSS PAY",
+        'choose_payment': "💳 *Выберите способ оплаты:*",
+        'cash_title': "💵 *Наличные*\n\nСвяжитесь с оператором для обсуждения условий сделки.",
+        'cashless_title': "💳 *Безналичные*\n\nДоступны все функции обменника.",
         'buy_btn': "🟢 Купить",
         'sell_btn': "🔴 Продать",
         'rates_btn': "📊 Курсы",
@@ -514,6 +545,9 @@ TEXTS = {
     },
     'en': {
         'welcome': "🏦 Welcome to MOSS PAY Crypto Exchanger",
+        'choose_payment': "💳 *Select payment method:*",
+        'cash_title': "💵 *Cash*\n\nContact the operator to discuss the terms of the deal.",
+        'cashless_title': "💳 *Cashless*\n\nAll exchanger features are available.",
         'buy_btn': "🟢 Buy",
         'sell_btn': "🔴 Sell",
         'rates_btn': "📊 Rates",
@@ -720,7 +754,7 @@ async def start(message: types.Message):
             f"• 💬 Поддержка 24/7\n"
             f"• 💰 Лучшие курсы\n"
             f"• 🔑 Обмен без KYC\n\n"
-            f"👇 *Выберите действие в меню ниже*"
+            f"👇 *Выберите способ оплаты:*"
         )
     else:
         welcome_text = (
@@ -732,15 +766,13 @@ async def start(message: types.Message):
             f"• 💬 24/7 support\n"
             f"• 💰 Best rates\n"
             f"• 🔑 No KYC\n\n"
-            f"👇 *Select an action below*"
+            f"👇 *Select payment method:*"
         )
     
     try:
-        await message.answer_photo(photo_url, caption=welcome_text, reply_markup=main_menu(uid))
-        await message.answer("🔽 *Дополнительные опции:*" if lang == 'ru' else "🔽 *Additional options:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
+        await message.answer_photo(photo_url, caption=welcome_text, reply_markup=choose_payment_menu(uid))
     except:
-        await message.answer(welcome_text, reply_markup=main_menu(uid))
-        await message.answer("🔽 *Additional options:*" if lang == 'en' else "🔽 *Дополнительные опции:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
+        await message.answer(welcome_text, reply_markup=choose_payment_menu(uid))
 
 @dp.message(Command("clear_db"))
 async def clear_db(message: types.Message):
@@ -770,7 +802,40 @@ async def admin_panel(message: types.Message):
     
     await message.answer(get_text(ADMIN_ID, 'admin_panel'), reply_markup=admin_menu())
 
-# ========== ОБРАБОТКА REPLY-КНОПОК ==========
+# ========== ОБРАБОТКА ВЫБОРА ОПЛАТЫ ==========
+@dp.callback_query(lambda c: c.data.startswith("payment_"))
+async def payment_choice_handler(call: types.CallbackQuery):
+    uid = call.from_user.id
+    data = call.data
+    
+    if data == "payment_cash":
+        # Наличные → показываем контакты оператора
+        text = get_text(uid, 'cash_title')
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=cash_menu(uid))
+        await call.answer()
+        return
+    
+    elif data == "payment_cashless":
+        # Безналичные → показываем основное меню и дополнительные опции
+        lang = get_lang(uid)
+        await call.message.edit_text(get_text(uid, 'cashless_title'), parse_mode="Markdown", reply_markup=main_menu(uid))
+        await call.message.answer("🔽 *Дополнительные опции:*" if lang == 'ru' else "🔽 *Additional options:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
+        await call.answer()
+        return
+    
+    elif data == "back_to_payment_choice":
+        # Назад к выбору оплаты
+        lang = get_lang(uid)
+        photo_url = "https://raw.githubusercontent.com/alexandr956/crypto-bot/main/welcome.jpg"
+        caption = "👇 *Выберите способ оплаты:*" if lang == 'ru' else "👇 *Select payment method:*"
+        try:
+            await call.message.answer_photo(photo_url, caption=caption, parse_mode="Markdown", reply_markup=choose_payment_menu(uid))
+        except:
+            await call.message.answer(caption, parse_mode="Markdown", reply_markup=choose_payment_menu(uid))
+        await call.answer()
+        return
+
+# ========== ОБРАБОТКА REPLY-КНОПОК (только для безналичных) ==========
 @dp.message(F.text.in_(["📞 Контакты", "📞 Contacts"]))
 async def contacts_reply(message: types.Message):
     uid = message.from_user.id
@@ -977,10 +1042,14 @@ async def handle_callback(call: types.CallbackQuery):
         cur.execute("UPDATE users SET language = ? WHERE user_id = ?", (lang, uid))
         conn.commit()
         
-        await call.message.edit_reply_markup(reply_markup=main_menu(uid))
-        await call.message.answer(get_text(uid, 'lang_selected'))
-        
-        await call.message.answer("🔽 *Дополнительные опции:*" if lang == 'ru' else "🔽 *Additional options:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
+        # Показываем главное меню (безналичные)
+        lang = get_lang(uid)
+        photo_url = "https://raw.githubusercontent.com/alexandr956/crypto-bot/main/welcome.jpg"
+        caption = "👇 *Выберите способ оплаты:*" if lang == 'ru' else "👇 *Select payment method:*"
+        try:
+            await call.message.answer_photo(photo_url, caption=caption, parse_mode="Markdown", reply_markup=choose_payment_menu(uid))
+        except:
+            await call.message.answer(caption, parse_mode="Markdown", reply_markup=choose_payment_menu(uid))
         
         await call.answer()
         return
@@ -990,13 +1059,17 @@ async def handle_callback(call: types.CallbackQuery):
         currency = data.split("_")[1]
         set_user_fiat(uid, currency)
         await call.message.answer(get_text(uid, 'currency_changed', currency=currency))
-        await call.message.answer(get_text(uid, 'welcome'), reply_markup=main_menu(uid))
+        # После смены валюты показываем главное меню безналичных
+        lang = get_lang(uid)
+        await call.message.answer(get_text(uid, 'cashless_title'), parse_mode="Markdown", reply_markup=main_menu(uid))
+        await call.message.answer("🔽 *Дополнительные опции:*" if lang == 'ru' else "🔽 *Additional options:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
         await call.answer()
         return
     
-    # Назад в главное меню
+    # Назад в главное меню (безналичные)
     if data == "main":
-        await call.message.edit_reply_markup(reply_markup=main_menu(uid))
+        lang = get_lang(uid)
+        await call.message.edit_text(get_text(uid, 'cashless_title'), parse_mode="Markdown", reply_markup=main_menu(uid))
         await call.answer()
         return
     
