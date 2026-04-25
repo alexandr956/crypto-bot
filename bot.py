@@ -725,6 +725,7 @@ async def start(message: types.Message):
         
         conn.commit()
     
+    photo_url = "https://raw.githubusercontent.com/alexandr956/crypto-bot/main/welcome.jpg"
     lang = get_lang(uid)
     
     if lang == 'ru':
@@ -752,7 +753,11 @@ async def start(message: types.Message):
             f"👇 *Select payment method:*"
         )
     
-    await message.answer(welcome_text, reply_markup=choose_payment_menu(uid))
+    # Отправляем картинку отдельным сообщением
+    try:
+        await message.answer_photo(photo_url, caption=welcome_text, reply_markup=choose_payment_menu(uid))
+    except:
+        await message.answer(welcome_text, reply_markup=choose_payment_menu(uid))
 
 @dp.message(Command("clear_db"))
 async def clear_db(message: types.Message):
@@ -793,7 +798,7 @@ async def payment_cash_handler(call: types.CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад" if get_lang(uid) == 'ru' else "🔙 Back", callback_data="back_to_payment_choice")]
     ])
     
-    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
     await call.answer()
 
 @dp.callback_query(lambda c: c.data == "payment_cashless")
@@ -801,7 +806,7 @@ async def payment_cashless_handler(call: types.CallbackQuery):
     uid = call.from_user.id
     lang = get_lang(uid)
     
-    await call.message.answer(get_text(uid, 'cashless_title'), parse_mode="Markdown", reply_markup=main_menu(uid))
+    await call.message.edit_text(get_text(uid, 'cashless_title'), parse_mode="Markdown", reply_markup=main_menu(uid))
     await call.message.answer("🔽 *Дополнительные опции:*" if lang == 'ru' else "🔽 *Additional options:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
     await call.answer()
 
@@ -809,13 +814,17 @@ async def payment_cashless_handler(call: types.CallbackQuery):
 async def back_to_payment_handler(call: types.CallbackQuery):
     uid = call.from_user.id
     lang = get_lang(uid)
+    photo_url = "https://raw.githubusercontent.com/alexandr956/crypto-bot/main/welcome.jpg"
     
     if lang == 'ru':
-        text = f"👋 Привет! Выберите способ оплаты:"
+        text = f"👋 \n\n👇 *Выберите способ оплаты:*"
     else:
-        text = f"👋 Hi! Select payment method:"
+        text = f"👋 \n\n👇 *Select payment method:*"
     
-    await call.message.answer(text, reply_markup=choose_payment_menu(uid))
+    try:
+        await call.message.answer_photo(photo_url, caption=text, parse_mode="Markdown", reply_markup=choose_payment_menu(uid))
+    except:
+        await call.message.answer(text, parse_mode="Markdown", reply_markup=choose_payment_menu(uid))
     await call.answer()
 
 # ========== ОБРАБОТКА REPLY-КНОПОК ==========
@@ -1025,13 +1034,17 @@ async def handle_callback(call: types.CallbackQuery):
         cur.execute("UPDATE users SET language = ? WHERE user_id = ?", (lang, uid))
         conn.commit()
         
-        lang = get_lang(uid)
+        # Показываем выбор оплаты после смены языка
+        photo_url = "https://raw.githubusercontent.com/alexandr956/crypto-bot/main/welcome.jpg"
         if lang == 'ru':
-            text = f"👋 Привет! Выберите способ оплаты:"
+            text = f"👋 \n\n👇 *Выберите способ оплаты:*"
         else:
-            text = f"👋 Hi! Select payment method:"
+            text = f"👋 \n\n👇 *Select payment method:*"
         
-        await call.message.answer(text, reply_markup=choose_payment_menu(uid))
+        try:
+            await call.message.answer_photo(photo_url, caption=text, parse_mode="Markdown", reply_markup=choose_payment_menu(uid))
+        except:
+            await call.message.answer(text, parse_mode="Markdown", reply_markup=choose_payment_menu(uid))
         await call.answer()
         return
     
