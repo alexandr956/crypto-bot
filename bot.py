@@ -5,6 +5,8 @@ from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
 from flask import Flask
 from threading import Thread
 import os
@@ -648,7 +650,8 @@ async def tech_on(message: types.Message):
         await message.answer("❌ *Неверный формат*\n\nИспользуй: `/tech_on Текст сообщения`\n\nПример: `/tech_on Обновление базы данных, бот вернётся через 15 минут`", parse_mode="Markdown")
         return
     
-    TECH_MODE = True    TECH_MESSAGE = tech_text
+    TECH_MODE = True
+    TECH_MESSAGE = tech_text
     
     cur.execute("SELECT user_id, language FROM users")
     users = cur.fetchall()
@@ -752,7 +755,6 @@ async def start(message: types.Message):
             f"👇 *Select payment method:*"
         )
     
-    # Отправляем картинку с клавиатурой выбора оплаты
     try:
         await message.answer_photo(photo_url, caption=welcome_text, parse_mode="Markdown", reply_markup=choose_payment_menu(uid))
     except:
@@ -797,7 +799,6 @@ async def payment_cash_handler(call: types.CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад" if get_lang(uid) == 'ru' else "🔙 Back", callback_data="back_to_payment_choice")]
     ])
     
-    # Не редактируем, а отправляем новое сообщение
     await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
     await call.answer()
 
@@ -806,7 +807,6 @@ async def payment_cashless_handler(call: types.CallbackQuery):
     uid = call.from_user.id
     lang = get_lang(uid)
     
-    # Не редактируем, а отправляем новое сообщение
     await call.message.answer(get_text(uid, 'cashless_title'), parse_mode="Markdown", reply_markup=main_menu(uid))
     await call.message.answer("🔽 *Дополнительные опции:*" if lang == 'ru' else "🔽 *Additional options:*", parse_mode="Markdown", reply_markup=reply_menu(uid))
     await call.answer()
@@ -822,7 +822,6 @@ async def back_to_payment_handler(call: types.CallbackQuery):
     else:
         text = f"👋 \n\n👇 *Select payment method:*"
     
-    # Отправляем новое сообщение с картинкой
     try:
         await call.message.answer_photo(photo_url, caption=text, parse_mode="Markdown", reply_markup=choose_payment_menu(uid))
     except:
